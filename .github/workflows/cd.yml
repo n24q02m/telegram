@@ -163,6 +163,9 @@ jobs:
     needs: [readme-sync, release]
     if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
+    # The trusted publisher for n24q02m-telegram is bound to this environment so it
+    # never matches the old better-telegram-mcp publisher (same repo + workflow).
+    environment: pypi
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -185,8 +188,8 @@ jobs:
   # same console scripts, so `uvx better-telegram-mcp` keeps working; only the
   # project name + description change). Gated by the legacy_final_note dispatch input so
   # it runs exactly once. PyPI trusted publishing (OIDC) like publish-pypi: no
-  # token; the old project's trusted publisher must point at this repo before
-  # the dispatch.
+  # token; the old project's trusted publisher must point at this repo with
+  # environment `pypi-legacy` before the dispatch.
   # ============================================================================
   publish-pypi-legacy-final:
     name: Publish better-telegram-mcp final rename note
@@ -195,6 +198,7 @@ jobs:
       inputs.legacy_final_note
       && needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
+    environment: pypi-legacy
     permissions:
       contents: read
       id-token: write
