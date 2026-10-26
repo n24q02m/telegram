@@ -153,6 +153,5 @@ async def test_general_exception(mock_backend):
     assert "RuntimeError" in result["error"]
 
 
-# Auth/send_code actions removed — auth handled by mcp-core's local OAuth
-# AS in HTTP mode (browser paste form + OTP /otp endpoint), not by the
-# config tool.
+# Auth/send_code actions are not part of the config tool: credentials are
+# set up with the `telegram auth` CLI (bot token, or phone + OTP/2FA).

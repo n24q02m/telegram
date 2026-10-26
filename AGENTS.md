@@ -60,7 +60,7 @@ Lenient: `unresolved-import`, `unresolved-attribute`, `possibly-unresolved-refer
 ### Import Ordering (isort via Ruff)
 
 1. Standard library (`import asyncio`, `import json`, `import os`)
-2. Third-party (`from loguru import logger`, `from mcp.server.fastmcp import FastMCP`)
+2. Third-party (`from loguru import logger`, `from fastmcp import FastMCP`)
 3. Local (`from telegram.config import Settings`)
 
 Lazy imports inside functions for heavy deps and to avoid circular deps.
@@ -70,8 +70,8 @@ import asyncio
 import json
 from pathlib import Path
 
+from fastmcp import FastMCP
 from loguru import logger
-from mcp.server.fastmcp import Context, FastMCP
 
 from telegram.config import Settings
 from telegram.backends.base import TelegramBackend
@@ -112,7 +112,7 @@ src/telegram/
     base.py                   # TelegramBackend ABC
     bot_backend.py            # httpx -> Telegram Bot API
     user_backend.py           # Telethon MTProto client
-  tools/                      # 7 tools: 4 domain mega-tools + config + help + config__open_relay
+  tools/                      # 6 tools: 4 domain mega-tools + config + help
     messages.py               # send, edit, delete, forward, pin, search
     chats.py                  # info, create, join, leave, settings
     media.py                  # send photo/file/voice/video, download
@@ -143,9 +143,10 @@ Conventional Commits: `type(scope): message`. Automated semantic release.
 
 - **Dual mode**: `Settings._detect_mode()` auto-selects bot/user based on env vars
 - **Backend ABC**: `TelegramBackend` defines interface; `BotBackend` (httpx) and `UserBackend` (Telethon) implement it
-- **Mega-tool pattern**: 7 tools (4 domain mega-tools + `config` + `help` + `config__open_relay`) x N actions = full API coverage with minimal tool registration overhead
+- **Mega-tool pattern**: 6 tools (4 domain mega-tools + `config` + `help`) x N actions = full API coverage with minimal tool registration overhead
 - **Session persistence**: `~/.telegram/<name>.session` for Telethon (MTProto); moved once from the pre-rename `~/.better-telegram-mcp/` by `config.resolve_default_data_dir()`
-- **Auth flow**: HTTP user-account auth runs through the relay credential form (phone -> OTP -> optional 2FA password) served by mcp-core's OAuth AS. Local single-user setup also supports `telegram auth --bot-token ...` (legacy alias `better-telegram-mcp`) and `auth --phone ...`; `login` is a deprecated alias. The MCP `config` tool has setup actions but no `auth` action. Bot mode needs only `TELEGRAM_BOT_TOKEN`
+- **Auth flow**: credentials are set up locally with `telegram auth --bot-token ...` or `telegram auth --phone ...` (interactive phone -> OTP -> optional 2FA password); `login` is a deprecated alias and `better-telegram-mcp` a legacy command alias. `--user <ns>` writes a hull `multi` mode namespace. The MCP `config` tool has no auth or setup actions. Bot mode needs only `TELEGRAM_BOT_TOKEN`
+- **Transports**: stdio by default; HTTP (`--http`) runs hull's transport with `~/.telegram/config.toml` (`no-auth` loopback only, `token`, or `multi` with `users.toml`)
 - **Glama integration**: The display name cannot be set programmatically and must be updated manually via the Glama admin page. Although 'server.json' contains a 'title' property, it does not control the external Glama listing. The 'glama.json' file is used exclusively for ownership claiming via the 'maintainers' array.
 
 ## TODO / Backlog

@@ -1,530 +1,157 @@
-"""Per-user Telegram authentication provider for multi-user HTTP mode.
+"""Per-namespace Telegram backends for hull's ``multi`` HTTP mode.
 
-Manages the lifecycle of per-user TelegramBackend instances:
-- Bot mode: validates bot_token, creates BotBackend
-- User mode: Telethon OTP flow (send_code -> sign_in)
-- Session persistence: reconnects stored sessions on startup
+hull resolves every HTTP request to an :class:`~hull_core.auth.AuthContext`
+whose ``namespace`` scopes storage. ``no-auth`` and ``token`` mode always use
+the ``default`` namespace, which ``server.py`` serves from its single global
+backend (env vars or ``telegram auth``). In ``multi`` mode each
+``users.toml`` user maps to its own namespace; this provider keeps one
+connected backend per non-default namespace:
 
-Keying convention: the provider is keyed by an opaque per-user identifier
-the caller chooses. In multi-user HTTP mode we key by the JWT ``sub`` UUID
-issued by mcp-core's local OAuth AS (one sub per ``/authorize`` round-trip,
-isolating concurrent users). The argument names retain the historical
-``bearer`` label for backwards-compatibility with existing call sites; the
-value is the ``sub`` in the new wiring.
+- credentials: ``PerPluginStore("telegram")`` leaf ``subs/<ns>/config``
+  (written by ``telegram auth --user <ns>``),
+- Telethon session: ``<data dir>/subs/<ns>/<session_name>.session``.
+
+Backends are created lazily on the first tool call of a namespace, so a user
+authorized with the CLI after the server started is picked up without a
+restart. There is no browser form, OAuth AS or relay: credentials only come
+from the local CLI.
 """
 
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import secrets
-import time
 from pathlib import Path
-from typing import TypedDict
 
+from hull_core.storage import validate_sub
 from loguru import logger
 
 from ..backends.base import TelegramBackend
-from ..backends.bot_backend import BotBackend
-from ..backends.user_backend import UserBackend
 from ..config import Settings
-from .in_memory_session_store import InMemorySessionStore, SessionInfo
+from ..errors import redact_bot_token
 
-# Module-level singleton for cross-component access from save_credentials,
-# on_step_submitted, and the auth_scope middleware. Set at HTTP-server
-# startup in ``_start_multi_user_http``; left as ``None`` in stdio /
-# single-user HTTP modes (which use the global ``_backend`` in server.py).
 _global_provider: TelegramAuthProvider | None = None
 
 
+def get_provider() -> TelegramAuthProvider:
+    """The process-global provider (created on first use)."""
+    global _global_provider
+    if _global_provider is None:
+        _global_provider = TelegramAuthProvider()
+    return _global_provider
+
+
 def set_global_provider(provider: TelegramAuthProvider | None) -> None:
-    """Register the process-global TelegramAuthProvider for multi-user HTTP."""
+    """Replace the process-global provider (tests, shutdown)."""
     global _global_provider
     _global_provider = provider
 
 
-def get_global_provider() -> TelegramAuthProvider | None:
-    """Return the process-global provider, or ``None`` outside multi-user HTTP."""
-    return _global_provider
+def namespace_data_dir(namespace: str) -> Path:
+    """Telethon session directory for ``namespace``: ``<data dir>/subs/<ns>``."""
+    return Settings().data_dir / "subs" / validate_sub(namespace)
 
 
-# Session expiry: 30 days
-_SESSION_TTL = 30 * 24 * 60 * 60
+def settings_for_namespace(namespace: str) -> Settings | None:
+    """Settings from the credentials saved for ``namespace``, or ``None``."""
+    from ..credential_state import _read_single_user_config
+
+    saved = _read_single_user_config(namespace)
+    if not saved or not (
+        saved.get("TELEGRAM_BOT_TOKEN") or saved.get("TELEGRAM_PHONE")
+    ):
+        return None
+    return Settings.from_saved_config(saved, data_dir=namespace_data_dir(namespace))
 
 
-# Pending OTP state (phone_code_hash + backend ref)
-class _PendingOTP(TypedDict):
-    bearer: str
-    backend: UserBackend
-    phone: str
-    phone_code_hash: str
-    session_name: str
-    created_at: float
+def create_backend(settings: Settings, namespace: str) -> TelegramBackend:
+    """Build (not connect) the backend matching ``settings.mode``."""
+    if settings.mode == "bot":
+        from ..backends.bot_backend import BotBackend
+
+        assert settings.bot_token is not None
+        return BotBackend(settings.bot_token)
+    from ..backends.user_backend import UserBackend
+
+    return UserBackend(settings, namespace=namespace)
 
 
 class TelegramAuthProvider:
-    """Manages per-user Telegram authentication and backend lifecycle.
+    """namespace -> connected :class:`TelegramBackend` registry."""
 
-    Each bearer token maps to its own TelegramBackend instance.
-    Supports both bot mode (instant) and user mode (OTP flow).
-    """
-
-    def __init__(
-        self,
-        data_dir: Path,
-        api_id: int,
-        api_hash: str,
-        backend=None,
-        store=None,
-        pending_store=None,
-    ) -> None:
-        self._data_dir = data_dir
-        self._api_id = api_id
-        self._api_hash = api_hash
-        self._backend = backend
-        self._store = store if store is not None else InMemorySessionStore()
-        self._pending_store = pending_store  # None = no KV persistence
-
-        # bearer -> active TelegramBackend
+    def __init__(self, factory=create_backend) -> None:
+        self._factory = factory
         self.active_clients: dict[str, TelegramBackend] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
 
-        # MCP session_id -> bearer (session ownership)
-        self.session_owners: dict[str, str] = {}
+    def resolve_backend(self, namespace: str) -> TelegramBackend | None:
+        """The already-connected backend of ``namespace`` (no I/O)."""
+        return self.active_clients.get(namespace)
 
-        # Pending OTP verifications (bearer -> pending state)
-        self._pending_otps: dict[str, _PendingOTP] = {}
+    async def get(self, namespace: str) -> TelegramBackend | None:
+        """Connected, authorized backend for ``namespace``.
 
-    @staticmethod
-    def _generate_bearer() -> str:
-        """Generate a cryptographically secure bearer token."""
-        return secrets.token_urlsafe(32)
-
-    @staticmethod
-    def _session_name_from_bearer(bearer: str) -> str:
-        """Derive a safe session file name from bearer token."""
-        return hashlib.sha256(bearer.encode()).hexdigest()[:16]
-
-    async def restore_sessions(self) -> int:
-        """Restore all stored sessions on server startup.
-
-        Returns the number of successfully restored sessions.
+        Returns ``None`` when the namespace has no saved credentials or its
+        user-mode session is not authorized yet. Connection errors are
+        re-raised with any bot token redacted and without the original
+        exception chain (which can carry the token in a request URL).
         """
-        import asyncio
-
-        if not self._store.has_any():
-            return 0
-
-        sessions = self._store.load_all()
-        now = time.time()
-
-        # ⚡ Bolt: Initialize Telegram backends concurrently instead of sequentially
-        # This drastically reduces server startup time when many active users exist
-        # by executing the network-bound connect() operations in parallel.
-        async def _restore_single(bearer: str, info: SessionInfo) -> bool:
-            # Check TTL
-            if now - info.created_at > _SESSION_TTL:
-                logger.info(
-                    "Session {} expired, removing",
-                    info.session_name[:8],
-                )
-                self._store.delete(bearer)
-                return False
-
-            try:
-                backend = await self._create_backend(info)
-                self.active_clients[bearer] = backend
-                logger.info(
-                    "Restored {} session: {}",
-                    info.mode,
-                    info.session_name[:8],
-                )
-                return True
-            except Exception:
-                logger.warning(
-                    "Failed to restore session {}, removing",
-                    info.session_name[:8],
-                )
-                self._store.delete(bearer)
-                return False
-
-        if not sessions:
-            return 0
-
-        results = await asyncio.gather(
-            *(_restore_single(bearer, info) for bearer, info in sessions.items())
-        )
-        return sum(results)
-
-    async def _create_backend(self, info: SessionInfo) -> TelegramBackend:
-        """Create and connect a backend from session info."""
-        if info.mode == "bot":
-            assert info.bot_token is not None
-            backend = BotBackend(info.bot_token)
-            await backend.connect()
-            return backend
-        else:
-            settings = Settings(
-                api_id=self._api_id,
-                api_hash=self._api_hash,
-                phone=info.phone,
-                session_name=info.session_name,
-                data_dir=self._data_dir / "user_sessions",
-            )
-            backend = UserBackend(settings, backend=self._backend)
-            await backend.connect()
-            return backend
-
-    def resolve_backend(self, bearer: str) -> TelegramBackend | None:
-        """Get the TelegramBackend for a bearer token."""
-        return self.active_clients.get(bearer)
-
-    async def register_bot(self, bearer: str, bot_token: str) -> str:
-        """Register a bot backend for the given bearer token.
-
-        Validates the bot_token by calling getMe, then stores the session.
-
-        Args:
-            bearer: Pre-generated bearer token (or generate one).
-            bot_token: Telegram bot token from @BotFather.
-
-        Returns:
-            The bearer token for subsequent requests.
-
-        Raises:
-            ValueError: If bot_token is invalid.
-        """
-        if not bearer:
-            bearer = self._generate_bearer()
-
-        backend = BotBackend(bot_token)
-        try:
-            await backend.connect()
-        except Exception as exc:
-            await backend.disconnect()
-            msg = f"Invalid bot token: {exc}"
-            raise ValueError(msg) from exc
-
-        session_name = self._session_name_from_bearer(bearer)
-        info = SessionInfo(
-            session_name=session_name,
-            mode="bot",
-            bot_token=bot_token,
-        )
-
-        self._store.store(bearer, info)
-        self.active_clients[bearer] = backend
-        logger.info("Registered bot session: {}", session_name[:8])
-        return bearer
-
-    async def _init_user_backend(self, phone: str, session_name: str) -> UserBackend:
-        """Initialize and connect a UserBackend."""
-        if not self._api_id or not self._api_hash:
-            msg = "TELEGRAM_API_ID and TELEGRAM_API_HASH must be set for user mode"
-            raise ValueError(msg)
-
-        settings = Settings(
-            api_id=self._api_id,
-            api_hash=self._api_hash,
-            phone=phone,
-            session_name=session_name,
-            data_dir=self._data_dir / "user_sessions",
-        )
-        backend = UserBackend(settings, backend=self._backend)
-        await backend.connect()
-        return backend
-
-    async def _send_otp_request(self, backend: UserBackend, phone: str) -> str:
-        """Send OTP code request via the backend."""
-        try:
-            # Telethon's send_code_request returns a SentCode object with phone_code_hash
-            client = backend._ensure_client()
-            sent_code = await client.send_code_request(phone)
-            return sent_code.phone_code_hash
-        except Exception as exc:
-            await backend.disconnect()
-            msg = f"Failed to send code: {exc}"
-            raise ValueError(msg) from exc
-
-    async def _register_pending_otp(
-        self,
-        bearer: str,
-        backend: UserBackend,
-        phone: str,
-        phone_code_hash: str,
-        session_name: str,
-    ) -> None:
-        """Store pending OTP state and handle cleanup of existing entries."""
-        # Pop any existing entry first so the new entry is appended at the end,
-        # keeping dict insertion order aligned with chronological created_at.
-        # This enables O(1) early-exit cleanup in cleanup_expired().
-        if (existing := self._pending_otps.pop(bearer, None)) is not None:
-            await existing["backend"].disconnect()
-
-        now = time.time()
-        self._pending_otps[bearer] = {
-            "bearer": bearer,
-            "backend": backend,
-            "phone": phone,
-            "phone_code_hash": phone_code_hash,
-            "session_name": session_name,
-            "created_at": now,
-        }
-
-        # Persist metadata to KV so the OTP state survives container sleep/recreate.
-        # The live Telethon backend cannot be serialized, but the metadata (phone,
-        # phone_code_hash, session_name) is enough to recreate it after a restart.
-        if self._pending_store is not None:
-            self._pending_store.save_pending_otp(
-                sub=bearer,
-                bearer=bearer,
-                data={
-                    "phone": phone,
-                    "phone_code_hash": phone_code_hash,
-                    "session_name": session_name,
-                    "created_at": now,
-                },
-            )
-
-    async def start_user_auth(self, bearer: str, phone: str) -> dict:
-        """Start user authentication by sending OTP code.
-
-        Args:
-            bearer: Pre-generated bearer token.
-            phone: Phone number in international format.
-
-        Returns:
-            Dict with phone_code_hash for verification step.
-
-        Raises:
-            ValueError: If api_id/api_hash not configured or send_code fails.
-        """
-        if not bearer:
-            bearer = self._generate_bearer()
-
-        session_name = self._session_name_from_bearer(bearer)
-        backend = await self._init_user_backend(phone, session_name)
-        phone_code_hash = await self._send_otp_request(backend, phone)
-
-        await self._register_pending_otp(
-            bearer, backend, phone, phone_code_hash, session_name
-        )
-
-        return {
-            "bearer": bearer,
-            "phone_code_hash": phone_code_hash,
-        }
-
-    async def complete_user_auth(
-        self,
-        bearer: str,
-        code: str,
-        *,
-        password: str | None = None,
-    ) -> dict:
-        """Complete user authentication with OTP code.
-
-        Args:
-            bearer: Bearer token from start_user_auth.
-            code: OTP code received via Telegram.
-            password: Optional 2FA password.
-
-        Returns:
-            Dict with authenticated user info.
-
-        Raises:
-            ValueError: If bearer not found in pending OTPs or sign-in fails.
-        """
-        pending = self._pending_otps.get(bearer)
-
-        # Fallback: if the container slept/recreated, the RAM dict is empty
-        # but the metadata may still be in KV. Recreate a fresh UserBackend
-        # from the persisted metadata.
-        if pending is None and self._pending_store is not None:
-            kv_data = self._pending_store.load_pending_otp(sub=bearer, bearer=bearer)
-            if kv_data is not None:
-                phone = kv_data["phone"]
-                session_name = kv_data["session_name"]
-                phone_code_hash = kv_data["phone_code_hash"]
-                backend = await self._init_user_backend(phone, session_name)
-                pending = _PendingOTP(
-                    bearer=bearer,
-                    backend=backend,
-                    phone=phone,
-                    phone_code_hash=phone_code_hash,
-                    session_name=session_name,
-                    created_at=kv_data.get("created_at", time.time()),
-                )
-                # Re-register in RAM so retries work without another KV read
-                self._pending_otps[bearer] = pending
-                logger.info(
-                    "Restored pending OTP from KV for {}: {}",
-                    bearer[:12],
-                    session_name[:8],
-                )
-
-        if pending is None:
-            msg = "No pending authentication for this bearer token"
-            raise ValueError(msg)
-
-        backend = pending["backend"]
-        phone = pending["phone"]
-
-        try:
-            result = await backend.sign_in(phone, code, password=password)
-        except Exception as exc:
-            # Don't clean up pending - allow retry with different code
-            msg = f"Sign-in failed: {exc}"
-            raise ValueError(msg) from exc
-
-        # Success - store session and activate backend
-        del self._pending_otps[bearer]
-        if self._pending_store is not None:
-            self._pending_store.delete_pending_otp(sub=bearer, bearer=bearer)
-
-        info = SessionInfo(
-            session_name=pending["session_name"],
-            mode="user",
-            api_id=self._api_id,
-            api_hash=self._api_hash,
-            phone=phone,
-        )
-
-        self._store.store(bearer, info)
-        self.active_clients[bearer] = backend
-        logger.info("Registered user session: {}", info.session_name[:8])
-        return result
-
-    async def revoke_session(self, bearer: str) -> bool:
-        """Revoke a session and disconnect its backend.
-
-        Returns True if the session existed.
-        """
-        tasks = []
-        backend = self.active_clients.pop(bearer, None)
+        backend = self.active_clients.get(namespace)
         if backend is not None:
-            tasks.append(backend.disconnect())
-
-        # Remove pending OTP if any
-        pending = self._pending_otps.pop(bearer, None)
-        if pending is not None:
-            tasks.append(pending["backend"].disconnect())
-
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Remove from ownership map
-        to_remove = [sid for sid, b in self.session_owners.items() if b == bearer]
-        for sid in to_remove:
-            del self.session_owners[sid]
-
-        return self._store.delete(bearer)
-
-    async def cleanup_expired(self) -> int:
-        """Remove expired sessions. Returns count of removed sessions."""
-        removed = 0
-        now = time.time()
-
-        has_sessions = self._store.has_any()
-        has_pending_kv = (
-            self._pending_store is not None and self._pending_store.has_any()
-        )
-
-        if not has_sessions and not self._pending_otps and not has_pending_kv:
-            return 0
-
-        if has_sessions:
-            sessions = self._store.load_all()
-            to_revoke = [
-                bearer
-                for bearer, info in sessions.items()
-                if now - info.created_at > _SESSION_TTL
-            ]
-
-            if to_revoke:
-                results = await asyncio.gather(
-                    *(self.revoke_session(b) for b in to_revoke),
-                    return_exceptions=True,
+            return backend
+        lock = self._locks.setdefault(namespace, asyncio.Lock())
+        async with lock:
+            backend = self.active_clients.get(namespace)
+            if backend is not None:
+                return backend
+            settings = settings_for_namespace(namespace)
+            if settings is None:
+                return None
+            backend = self._factory(settings, namespace)
+            try:
+                await backend.connect()
+                authorized = settings.mode == "bot" or await backend.is_authorized()
+            except Exception as exc:
+                await backend.disconnect()
+                msg = (
+                    f"Could not connect the Telegram backend for namespace "
+                    f"{namespace!r}: {redact_bot_token(str(exc))}"
                 )
-                for res in results:
-                    if isinstance(res, Exception):
-                        logger.warning("Error revoking session during cleanup: {}", res)
-                    elif res is True:
-                        removed += 1
+                raise RuntimeError(msg) from None
+            if not authorized:
+                await backend.disconnect()
+                logger.warning(
+                    "Telegram session of namespace {} is not authorized; run "
+                    "`telegram auth --phone <+number> --user {}`.",
+                    namespace,
+                    namespace,
+                )
+                return None
+            self.active_clients[namespace] = backend
+            logger.info("Connected Telegram backend for namespace {}", namespace)
+            return backend
 
-        # Clean up stale pending OTPs (5 min TTL) using chronological insertion order.
-        # Since start_user_auth pops-then-reinserts each bearer, the oldest entries
-        # are always at the front, so we can stop at the first non-stale entry instead
-        # of scanning the full dict on every cleanup tick.
-        stale_otps = []
-        while self._pending_otps:
-            bearer, pending = next(iter(self._pending_otps.items()))
-            if now - pending["created_at"] <= 300:
-                break
-            stale_otps.append((bearer, self._pending_otps.pop(bearer)))
-
-        if stale_otps:
-
-            async def _disconnect(b: str, p: dict) -> None:
-                try:
-                    await p["backend"].disconnect()
-                except Exception as exc:  # pragma: no cover - best-effort cleanup
-                    logger.warning(
-                        "Error disconnecting stale OTP backend {}: {}", b[:8], exc
-                    )
-
-            await asyncio.gather(
-                *(_disconnect(b, p) for b, p in stale_otps),
-                return_exceptions=True,
-            )
-            removed += len(stale_otps)
-            if self._pending_store is not None:
-                for bearer, _ in stale_otps:
-                    self._pending_store.delete_pending_otp(sub=bearer, bearer=bearer)
-
-        if self._pending_store is not None and has_pending_kv:
-            removed += self._pending_store.cleanup_expired()
-
-        return removed
+    async def revoke(self, namespace: str) -> bool:
+        """Disconnect and forget the backend of ``namespace``."""
+        backend = self.active_clients.pop(namespace, None)
+        if backend is None:
+            return False
+        await backend.disconnect()
+        return True
 
     async def shutdown(self) -> None:
-        """Disconnect all active backends concurrently. Call on server shutdown.
+        """Disconnect every backend concurrently (best effort)."""
+        items = list(self.active_clients.items())
+        self.active_clients.clear()
 
-        Each Telethon ``disconnect()`` waits for an MTProto roundtrip; running
-        them sequentially turns a fast shutdown into ``len(clients) * RTT``.
-        ``asyncio.gather(..., return_exceptions=True)`` parallelises them and
-        keeps the "best-effort cleanup" semantics — any individual disconnect
-        failure is logged but does not abort the rest.
-        """
-        active_items = list(self.active_clients.items())
-        pending_items = list(self._pending_otps.items())
-
-        async def _disconnect_active(bearer: str, backend: object) -> None:
+        async def _disconnect(namespace: str, backend: TelegramBackend) -> None:
             try:
-                await backend.disconnect()  # type: ignore[attr-defined]
-            except Exception as exc:
-                logger.warning("Error disconnecting backend {}: {}", bearer[:8], exc)
-
-        async def _disconnect_pending(bearer: str, pending: dict) -> None:
-            try:
-                await pending["backend"].disconnect()
+                await backend.disconnect()
             except Exception as exc:
                 logger.warning(
-                    "Error disconnecting pending OTP backend {}: {}",
-                    bearer[:8],
-                    exc,
+                    "Error disconnecting backend of namespace {}: {}",
+                    namespace,
+                    type(exc).__name__,
                 )
 
-        if active_items:
-            await asyncio.gather(
-                *(_disconnect_active(b, c) for b, c in active_items),
-                return_exceptions=True,
-            )
-        self.active_clients.clear()
-        self.session_owners.clear()
-
-        if pending_items:
-            await asyncio.gather(
-                *(_disconnect_pending(b, p) for b, p in pending_items),
-                return_exceptions=True,
-            )
-        self._pending_otps.clear()
+        if items:
+            await asyncio.gather(*(_disconnect(ns, b) for ns, b in items))

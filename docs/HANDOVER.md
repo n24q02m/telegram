@@ -2,48 +2,43 @@
 
 ## Current product
 
-Telegram MCP exposes Telegram messaging, chat, media, and contact operations through MCP. It supports Bot API and MTProto user-account modes, local stdio operation, and HTTP relay setup for self-hosted multi-user deployments.
+Telegram MCP exposes Telegram messaging, chat, media, and contact operations through 6 MCP tools (`message`, `chat`, `media`, `contact`, `config`, `help`). It supports Bot API and MTProto user-account modes over local stdio, and an HTTP transport for self-hosted deployments.
 
-The public contract is defined by the repository README, `server.json`, package metadata, and the documented MCP tools. The credential form is rendered through the shared MCP core renderer; Telegram adds its Bot/User tabs and accessibility enhancements without maintaining a second form renderer.
+The server is built on hull (`n24q02m-hull`, imported as `hull_core`) and standalone FastMCP 3. hull provides the HTTP transport and bearer auth, the encrypted per-plugin credential store, and the shared CLI built-ins. There is no browser credential form, OAuth server, relay or hosted endpoint.
+
+The public contract is defined by the repository README, `server.json`, package metadata, and the documented MCP tools.
 
 ## Build and verify
 
 - Python: 3.13
-- Install: `uv sync --group dev --no-sources`
+- Install: `uv sync --group dev`
+- Lint: `uv run ruff check .`
+- Format: `uv run ruff format --check .`
+- Types: `uv run ty check`
+- Tests: `uv run pytest --cov --cov-report=term-missing -q` (coverage gate 95%)
 
-- Lint: `uv run --no-sync ruff check .`
-- Format: `uv run --no-sync ruff format --check .`
-- Types: `uv run --no-sync ty check`
-- Tests: `uv run --no-sync pytest tests/`
-
-Integration, live, full, and end-to-end tests require Telegram credentials and an approved test account. A representative protocol check must call a domain operation such as listing chats or updates; configuration status alone is only a handshake.
+The default test run includes MCP protocol tests over stdio (`tests/test_stdio_direct.py`) and HTTP loopback (`tests/test_transports/test_http.py`) with fake credentials and no network calls to Telegram. Live and end-to-end tests (`-m live`, `-m e2e`) require Telegram credentials and an approved test account. A representative live check must call a domain operation such as listing chats; configuration status alone is only a handshake.
 
 ## Runtime and data boundaries
 
-Bot mode uses `TELEGRAM_BOT_TOKEN`. User mode uses the documented phone/OTP flow and stores the Telethon session in the configured data directory. HTTP deployments require the documented transport, public URL, and OAuth/relay settings. Remote credential state must remain isolated per authenticated subject.
-
-Pending OTP metadata is indexed by subject and bearer. The index supports an O(1) empty-state check; cleanup still applies the five-minute expiry policy and removes stale entries without scanning when the index is empty.
+- Bot mode uses `TELEGRAM_BOT_TOKEN` or a token saved by `telegram auth --bot-token`.
+- User mode uses `telegram auth --phone` (interactive OTP / 2FA) and stores the Telethon session in the data directory (`~/.telegram` by default).
+- HTTP settings live in `~/.telegram/config.toml` `[server]`: `host` (default `127.0.0.1`), `port` (default `8000`), `auth` (`no-auth` | `token` | `multi`). `no-auth` refuses non-loopback binds.
+- `multi` mode maps each `users.toml` user to a storage namespace. Credentials for a namespace are written with `telegram auth --user <ns>` and stored under `~/.telegram/subs/<ns>/`. Credential state must remain isolated per namespace.
+- Upgrades migrate once: the pre-hull shared `config.enc` entry moves into the default namespace, and a pre-hull `~/.telegram/.secret` that is not a hull machine key is renamed aside.
 
 Do not put credentials, OTPs, session files, or raw protocol transcripts in the repository. Do not use external infrastructure as a source of truth for local development or verification.
 
-## Transport-contract reconciliation
-
-The executable currently defaults to local stdio; HTTP is explicit through
-`--http`, `MCP_TRANSPORT=http`, or `TRANSPORT_MODE=http`. The canonical stack
-mode matrix names `http remote relay` as Telegram's deployed default. This is
-an explicit source-versus-canonical contract discrepancy, not a documentation
-claim of equivalence. Main must decide whether to migrate the executable
-default, update the canonical matrix, or retain separate local and deployed
-defaults before closing the global docs item.
-
 ## Recent source decisions
 
-- Added the `color-scheme: light dark` form metadata so native browser controls follow the page's supported themes.
-- Added indexed pending-OTP existence checks and an early return in auth cleanup for the empty state.
-- Removed the Cloudflare Worker hosting surface (worker, wrangler configs, CF deploy job, npm lockfiles); self-hosting is Docker HTTP only.
-- Consolidated duplicate palette proposals into the single form metadata implementation. The view-transition proposal was not adopted because it added a second lockfile and animation behavior without a product acceptance requirement.
+- Moved from mcp-core to hull: relay form, OAuth AS, pending-OTP store, in-memory session store and the `config__open_relay` tool were removed. Setup is local CLI only.
+- HTTP transport is a thin wrapper over hull `run_http_server`, configured by `~/.telegram/config.toml`.
+- The CLI uses hull `build_cli`: `auth`, `login` (deprecated alias), `logout` plus hull's `config`, `status`, `doctor`, `token hash`; `--user` selects the namespace.
+- Removed the Cloudflare Worker hosting surface earlier; self-hosting is Docker or the Python package.
 
 ## In-flight and release notes
+
+`n24q02m-hull` is pinned to a git commit until it is published to PyPI. The git direct reference must be replaced with a PyPI version range before a PyPI release, because PyPI rejects direct references in package metadata.
 
 Source changes require repository-native checks and CI readback before merge. BETA/package publication and live protocol evidence are separate from source merge. Stable promotion is a separate release decision and is not implied by this handover.
 
@@ -51,15 +46,16 @@ Rollback is the normal reviewed revert of the source commit and package dependen
 
 ## Week-one operator checklist
 
-1. Confirm the intended transport and credential mode.
+1. Confirm the intended transport (stdio or HTTP) and credential mode (bot or user).
 2. Install with the documented `uv` command.
 3. Run lint, type, and Python tests.
 4. Exercise one representative read-only Telegram domain operation with approved credentials.
-5. Confirm per-subject credential isolation and pending-OTP expiry behavior.
+5. For HTTP `multi` mode, confirm two users resolve to separate namespaces.
 6. Review the exact CI run and artifact identity before using a BETA package.
 
 ## Triage
 
-- Form theme mismatch: inspect the rendered `<head>` and the shared renderer version.
-- OTP cleanup regression: inspect the shared pending-OTP index and run the auth-store tests with an in-memory backend.
-- Authentication failures: distinguish missing credentials, malformed documented credential input, and provider rejection before rotating anything.
+- Server exits 1 on stdio start: no credentials; run `telegram auth` or set `TELEGRAM_BOT_TOKEN`.
+- Server exits 2 in HTTP mode: invalid `config.toml` / `users.toml`, or `no-auth` on a non-loopback host; the stderr line names the problem.
+- Machine key errors: check `~/.telegram/.secret` is hull's 32-byte key; a renamed `.secret.legacy-credential-store` is expected after an upgrade.
+- Authentication failures: distinguish missing credentials, malformed credential input, and provider rejection before rotating anything.

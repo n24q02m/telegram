@@ -1,9 +1,9 @@
 """Helpers for reading the tools' structured output in tests.
 
-``message`` / ``chat`` / ``contact`` / ``media`` return a ``CallToolResult``
+``message`` / ``chat`` / ``contact`` / ``media`` return a FastMCP ``ToolResult``
 (built by ``server._wrap_tool``) so that both response channels can be asserted:
 the text block keeps the ``<untrusted_{tool}_content>`` XPIA boundary tags and
-``structuredContent`` carries the envelope markers. ``config`` returns a plain
+``structured_content`` carries the envelope markers. ``config`` returns a plain
 dict, which FastMCP turns into ``structuredContent`` on the wire; ``help``
 returns markdown text.
 
@@ -16,20 +16,23 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from mcp.types import CallToolResult, TextContent
+from fastmcp.tools import ToolResult
+from mcp.types import TextContent
 
 
-def payload(result: CallToolResult | dict[str, Any]) -> dict[str, Any]:
+def payload(result: ToolResult | dict[str, Any]) -> dict[str, Any]:
     """Return the tool's structured payload."""
-    if isinstance(result, CallToolResult):
-        assert result.structuredContent is not None, "tool emitted no structuredContent"
-        return result.structuredContent
+    if isinstance(result, ToolResult):
+        assert result.structured_content is not None, (
+            "tool emitted no structuredContent"
+        )
+        return result.structured_content
     return result
 
 
-def text(result: CallToolResult | dict[str, Any]) -> str:
+def text(result: ToolResult | dict[str, Any]) -> str:
     """Return the tool's text block, XPIA markers included."""
-    if isinstance(result, CallToolResult):
+    if isinstance(result, ToolResult):
         return "".join(
             block.text for block in result.content if isinstance(block, TextContent)
         )

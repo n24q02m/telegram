@@ -18,6 +18,7 @@ import importlib
 import json
 
 import pytest
+from fastmcp.tools import ToolResult
 from mcp.types import CallToolResult
 from structured import payload, text
 
@@ -70,7 +71,7 @@ def test_build_external_tool_result_marks_both_channels():
     result = build_external_tool_result(
         "message", {"messages": [{"text": "hi"}], "count": 1}
     )
-    assert isinstance(result, CallToolResult)
+    assert isinstance(result, ToolResult)
 
     data = payload(result)
     assert data["count"] == 1
@@ -225,7 +226,11 @@ async def test_wrapped_error_path_keeps_data_and_marks_structured(mock_backend):
 
 @pytest.mark.asyncio
 async def test_fastmcp_validates_wrapped_result_against_schema(mock_backend):
-    """The wrapped CallToolResult survives FastMCP's convert_result path."""
+    """The wrapped ToolResult survives FastMCP's tool-call path.
+
+    ``FastMCP.call_tool`` validates the result against the tool's output
+    schema; ``to_mcp_result`` is what goes on the wire.
+    """
     srv = _srv()
     old_backend, old_pending, old_unconf = (
         srv._backend,
@@ -237,15 +242,16 @@ async def test_fastmcp_validates_wrapped_result_against_schema(mock_backend):
         srv._pending_auth = False
         srv._unconfigured = False
         mock_backend.search_messages.return_value = [{"message_id": 1, "text": "hi"}]
-        result = await srv.mcp._tool_manager.call_tool(
-            "message",
-            {"action": "search", "query": "x"},
-            context=None,
-            convert_result=True,
-        )
-        assert isinstance(result, CallToolResult)
-        assert result.structuredContent["_untrusted_source"] == "telegram"
-        assert "<untrusted_message_content>" in result.content[0].text
+        result = await srv.mcp.call_tool("message", {"action": "search", "query": "x"})
+        assert isinstance(result, ToolResult)
+        # A non-error result with structured content goes on the wire as
+        # (content, structuredContent).
+        wire = result.to_mcp_result()
+        assert not isinstance(wire, CallToolResult)
+        assert isinstance(wire, tuple)
+        content, structured = wire
+        assert structured["_untrusted_source"] == "telegram"
+        assert "<untrusted_message_content>" in content[0].text
     finally:
         srv._backend, srv._pending_auth, srv._unconfigured = (
             old_backend,

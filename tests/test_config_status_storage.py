@@ -1,143 +1,95 @@
-"""Single-user credential storage unification (config-status parity).
+"""``config status`` / ``status`` / ``doctor`` parity with the server's store.
 
-Regression coverage for the ``config status`` / ``doctor`` mismatch: the
-server used to persist single-user credentials to the legacy shared
-``config.enc`` (keyed by the pre-rename server name ``better-telegram-mcp``) while
-``mcp_core.build_cli``'s built-ins read ``PerPluginStore`` (keyed by the
-plugin slug ``telegram``), so a saved credential was reported as "not
-configured".
+Regression coverage for the original mismatch: the server persisted
+credentials under one key while the CLI built-ins read another, so a saved
+credential was reported as "not configured". With hull, the server writes
+``PerPluginStore("telegram")`` and ``build_cli(plugin_name="telegram")`` reads
+the same blob. A pre-hull ``config.enc`` entry is migrated before a store
+built-in runs, so an upgraded install is reported as configured without
+starting the server first.
 
-These tests exercise the real ``PerPluginStore`` + legacy ``config_file``
-backends against an isolated ``$HOME`` (no mocks on the storage layer) so a
-genuine path/slug mismatch would fail them. The contract mirrored here is the
-storage-unify cutover (mcp-core #668):
-
-    WRITE  -> PerPluginStore("telegram").save(config)
-    READ   -> PerPluginStore("telegram").load() ?? legacy read_config(SERVER_NAME)
-    DELETE -> PerPluginStore("telegram").clear() + legacy delete_config(SERVER_NAME)
+Everything runs against the real store and legacy file under the fake home of
+the autouse ``_isolate_per_plugin_home`` fixture.
 """
 
 from __future__ import annotations
 
-import sys
-
 import pytest
+from hull_core.storage import PerPluginStore
+from legacy_store import read_legacy_entry, write_legacy_store
 
+from telegram import cli
 from telegram.credential_state import (
-    SERVER_NAME,
+    PLUGIN_NAME,
     _delete_single_user_config,
-    _read_single_user_config,
     _write_single_user_config,
-    resolve_credential_state,
 )
+from telegram.sessions import SERVER_NAME
 
-# The credential storage slug the server writes under and build_cli reads from.
-PLUGIN = "telegram"
-
-
-def _per_plugin_store():
-    from mcp_core.storage.per_plugin_store import PerPluginStore
-
-    return PerPluginStore(PLUGIN)
+FAKE_TOKEN = "123456:" + "S" * 35
 
 
-@pytest.fixture
-def isolated_home(tmp_path, monkeypatch):
-    """Point every credential store at a throwaway home + config path."""
-    monkeypatch.setenv("USERPROFILE", str(tmp_path))
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.delenv("MCP_STORAGE_BACKEND", raising=False)
-    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
-    monkeypatch.delenv("TELEGRAM_PHONE", raising=False)
-
-    from mcp_core.storage import config_file
-
-    config_file.set_config_path(str(tmp_path / "mcp" / "config.enc"))
-    config_file.clear_key_cache_for_testing()
-    yield tmp_path
-    config_file.set_config_path(None)
-    config_file.clear_key_cache_for_testing()
+def _run(capsys, *argv: str) -> tuple[int, str]:
+    rc = cli.main(list(argv))
+    captured = capsys.readouterr()
+    assert FAKE_TOKEN not in captured.out + captured.err
+    return rc, captured.out
 
 
-def test_write_routes_to_per_plugin_store(isolated_home):
-    """A single-user save lands in the store ``config status`` reads."""
-    _write_single_user_config({"TELEGRAM_BOT_TOKEN": "123:abc"})
-
-    assert _per_plugin_store().load() == {"TELEGRAM_BOT_TOKEN": "123:abc"}
-
-
-def test_read_round_trips_through_per_plugin_store(isolated_home):
-    _write_single_user_config({"TELEGRAM_PHONE": "+84900000000"})
-
-    assert _read_single_user_config() == {"TELEGRAM_PHONE": "+84900000000"}
-
-
-def test_read_falls_back_to_legacy_config(isolated_home):
-    """Credentials written before the cutover stay readable (zero re-auth)."""
-    from mcp_core.storage import config_file
-
-    config_file.write_config(SERVER_NAME, {"TELEGRAM_PHONE": "+84900000000"})
-    # Nothing in the per-plugin store yet -- the read must reach the legacy blob.
-    assert _per_plugin_store().load() is None
-
-    assert _read_single_user_config() == {"TELEGRAM_PHONE": "+84900000000"}
-
-
-def test_read_prefers_per_plugin_store_over_legacy(isolated_home):
-    """When both stores hold a value the per-plugin store wins."""
-    from mcp_core.storage import config_file
-
-    config_file.write_config(SERVER_NAME, {"TELEGRAM_PHONE": "legacy"})
-    _write_single_user_config({"TELEGRAM_BOT_TOKEN": "new:token"})
-
-    assert _read_single_user_config() == {"TELEGRAM_BOT_TOKEN": "new:token"}
-
-
-def test_write_migrates_legacy_on_next_save(isolated_home):
-    """A save after an upgrade supersedes the legacy blob in the new store."""
-    from mcp_core.storage import config_file
-
-    config_file.write_config(SERVER_NAME, {"TELEGRAM_PHONE": "legacy"})
-    _write_single_user_config({"TELEGRAM_BOT_TOKEN": "migrated:token"})
-
-    assert _per_plugin_store().load() == {"TELEGRAM_BOT_TOKEN": "migrated:token"}
-
-
-def test_delete_clears_both_stores(isolated_home):
-    """Logout / reset must leave nothing behind in either store."""
-    from mcp_core.storage import config_file
-
-    config_file.write_config(SERVER_NAME, {"TELEGRAM_PHONE": "legacy"})
-    _write_single_user_config({"TELEGRAM_BOT_TOKEN": "123:abc"})
-
-    _delete_single_user_config()
-
-    assert _per_plugin_store().load() is None
-    assert config_file.read_config(SERVER_NAME) is None
-
-
-def test_legacy_only_install_still_resolves_configured(isolated_home):
-    """Zero-data-loss: an existing legacy-only install boots as CONFIGURED."""
-    from mcp_core.storage import config_file
-
-    from telegram.credential_state import CredentialState
-
-    config_file.write_config(SERVER_NAME, {"TELEGRAM_BOT_TOKEN": "legacy:token"})
-
-    assert resolve_credential_state() == CredentialState.CONFIGURED
-
-
-def test_config_status_reports_configured_after_save(isolated_home, capsys):
-    """End-to-end: `better-telegram-mcp config status` finds a saved credential."""
-    from telegram import cli
-
-    _write_single_user_config({"TELEGRAM_BOT_TOKEN": "123:abc"})
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(sys, "argv", ["better-telegram-mcp", "config", "status"])
-        rc = cli.main()
-
-    out = capsys.readouterr().out
+@pytest.mark.parametrize("argv", [("config", "status"), ("status",)])
+def test_builtins_report_configured_after_save(capsys, argv):
+    _write_single_user_config({"TELEGRAM_BOT_TOKEN": FAKE_TOKEN})
+    rc, out = _run(capsys, *argv)
     assert rc == 0
     assert "not configured" not in out
     assert "configured" in out
+
+
+@pytest.mark.parametrize("argv", [("config", "status"), ("status",)])
+def test_builtins_report_not_configured_after_delete(capsys, argv):
+    _write_single_user_config({"TELEGRAM_BOT_TOKEN": FAKE_TOKEN})
+    _delete_single_user_config()
+    rc, out = _run(capsys, *argv)
+    assert rc == 0
+    assert "not configured" in out
+
+
+@pytest.mark.parametrize("argv", [("config", "status"), ("status",)])
+def test_legacy_only_install_reports_configured(capsys, argv):
+    """An upgraded install is configured before the server ever starts."""
+    write_legacy_store({SERVER_NAME: {"TELEGRAM_BOT_TOKEN": FAKE_TOKEN}})
+    rc, out = _run(capsys, *argv)
+    assert rc == 0
+    assert "not configured" not in out
+    assert PerPluginStore(PLUGIN_NAME).load() == {"TELEGRAM_BOT_TOKEN": FAKE_TOKEN}
+    assert read_legacy_entry(SERVER_NAME) is None
+
+
+def test_non_store_subcommands_do_not_migrate(capsys):
+    write_legacy_store({SERVER_NAME: {"TELEGRAM_BOT_TOKEN": FAKE_TOKEN}})
+    rc, _ = _run(capsys, "--version")
+    assert rc == 0
+    assert PerPluginStore(PLUGIN_NAME).load() is None
+    assert read_legacy_entry(SERVER_NAME) == {"TELEGRAM_BOT_TOKEN": FAKE_TOKEN}
+
+
+def test_config_delete_clears_migrated_legacy_entry(capsys):
+    write_legacy_store({SERVER_NAME: {"TELEGRAM_BOT_TOKEN": FAKE_TOKEN}})
+    rc, _ = _run(capsys, "config", "delete", "--yes")
+    assert rc == 0
+    assert PerPluginStore(PLUGIN_NAME).load() is None
+    assert read_legacy_entry(SERVER_NAME) is None
+
+
+def test_failed_migration_still_runs_builtin(capsys, monkeypatch):
+    import telegram.credential_state as cs
+
+    def _boom(*_a, **_k):
+        raise OSError("unreadable")
+
+    monkeypatch.setattr(cs, "_read_single_user_config", _boom)
+    rc = cli.main(["status"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "not configured" in captured.out
+    assert "legacy credential migration skipped (OSError)" in captured.err

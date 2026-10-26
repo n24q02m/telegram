@@ -18,7 +18,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from mcp.types import CallToolResult, TextContent
+from fastmcp.tools import ToolResult
+from mcp.types import TextContent
 
 UNTRUSTED_SOURCE = "telegram"
 UNTRUSTED_WARNING = (
@@ -68,7 +69,7 @@ def build_external_tool_result(
     tool_name: str,
     payload: dict[str, Any],
     source: str = UNTRUSTED_SOURCE,
-) -> CallToolResult:
+) -> ToolResult:
     """Build the MCP result of a tool that returns untrusted external content.
 
     Both response channels carry the XPIA defence:
@@ -89,18 +90,18 @@ def build_external_tool_result(
     one that quotes external text is the vuln.
     """
     if "error" in payload:
-        return CallToolResult(
+        return ToolResult(
             content=[
                 TextContent(
                     type="text",
                     text=json.dumps(payload, ensure_ascii=False, indent=2),
                 )
             ],
-            structuredContent=mark_external_payload(payload, source),
+            structured_content=mark_external_payload(payload, source),
         )
 
     marked = mark_external_payload(payload, source)
-    return CallToolResult(
+    return ToolResult(
         content=[
             TextContent(
                 type="text",
@@ -109,5 +110,5 @@ def build_external_tool_result(
                 ),
             )
         ],
-        structuredContent=marked,
+        structured_content=marked,
     )

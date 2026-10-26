@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from ..relay_setup import redact_bot_token
+from ..errors import redact_bot_token
 from .base import TelegramBackend
 from .security import (
     SecurityError,

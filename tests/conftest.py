@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-# Import E2E pytest_addoption hooks so --setup/--browser/--backend are registered
+# Import E2E pytest_addoption hooks so --setup/--backend are registered
 try:
     from conftest_e2e import pytest_addoption as _e2e_addoption  # noqa: F401
 except ImportError:
@@ -166,14 +166,6 @@ def mock_user_backend():
 
 
 @pytest.fixture(autouse=True)
-def mock_try_open_browser():
-    """Globally mock try_open_browser to prevent orphan processes in CI."""
-
-    with patch("mcp_core.try_open_browser") as mock_browser:
-        yield mock_browser
-
-
-@pytest.fixture(autouse=True)
 def mock_webbrowser_open():
     """Globally mock webbrowser.open to prevent orphan processes in CI."""
 
@@ -181,20 +173,57 @@ def mock_webbrowser_open():
         yield mock_browser
 
 
+_ISOLATED_ENV_VARS = (
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_PHONE",
+    "TELEGRAM_API_ID",
+    "TELEGRAM_API_HASH",
+    "TELEGRAM_SESSION_NAME",
+    "TELEGRAM_DATA_DIR",
+    "MCP_STORAGE_BACKEND",
+    "CREDENTIAL_SECRET",
+    "MCP_TRANSPORT",
+    "TRANSPORT_MODE",
+)
+
+
 @pytest.fixture(autouse=True)
 def _isolate_per_plugin_home(tmp_path_factory, monkeypatch):
-    """Redirect ~/ to a per-test tmp dir so PerPluginStore writes can never
-    reach the real ~/.telegram-mcp/ (or a shared one between parallel pytest
-    workers). Path.home() reads HOME on POSIX and USERPROFILE on Windows.
+    """Redirect ~/ to a per-test tmp dir so no test can touch the real
+    ``~/.telegram`` (machine key, config, sessions) or the real mcp-core
+    ``config.enc`` (legacy migration source).
 
-    Defense-in-depth: the local single-user path
-    (``PerPluginStore("telegram")``, sub=None) routes through
-    backend_from_env() -> LocalFsBackend, which writes under Path.home().
+    ``Path.home()`` reads HOME on POSIX and USERPROFILE on Windows; it is also
+    patched directly so both resolve to the same fake home. Credential env vars
+    are removed so a developer's shell cannot leak into a test.
     See tests/test_home_isolation_guard.py.
     """
+    from pathlib import Path
+
+    import hull_core.storage.legacy_config_file as legacy_config_file
+
     fake_home = tmp_path_factory.mktemp("telegram_test_home")
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.setenv("USERPROFILE", str(fake_home))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+    monkeypatch.setattr(
+        legacy_config_file,
+        "default_legacy_config_path",
+        lambda: fake_home / "legacy-mcp" / "config.enc",
+    )
+    for name in _ISOLATED_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    yield fake_home
+
+
+@pytest.fixture(autouse=True)
+def _reset_global_provider():
+    """Each test starts without per-namespace backends."""
+    from telegram.auth import telegram_auth_provider
+
+    telegram_auth_provider.set_global_provider(None)
+    yield
+    telegram_auth_provider.set_global_provider(None)
 
 
 @pytest.fixture(autouse=True)

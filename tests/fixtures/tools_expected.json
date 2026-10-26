@@ -1,0 +1,625 @@
+[
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Telegram Messages"
+    },
+    "description": "Send, edit, delete, forward, pin, react, search, and get message history.\n\nActions (chat_id: \"@username\" | int):\n- send (chat_id, text -> reply_to, parse_mode)\n- edit (chat_id, message_id, text -> parse_mode)\n- delete (chat_id, message_id)\n- forward (from_chat, to_chat, message_id)\n- pin (chat_id, message_id)\n- react (chat_id, message_id, emoji)\n- search (query -> chat_id, limit=20)\n- history (chat_id -> limit=20, offset_id)\n",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "chat_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chat Id"
+        },
+        "emoji": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Emoji"
+        },
+        "from_chat": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From Chat"
+        },
+        "limit": {
+          "default": 20,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "message_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message Id"
+        },
+        "offset_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Offset Id"
+        },
+        "parse_mode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parse Mode"
+        },
+        "query": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Query"
+        },
+        "reply_to": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reply To"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "to_chat": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Chat"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "messageArguments",
+      "type": "object"
+    },
+    "name": "message",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "messageDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Telegram Chats"
+    },
+    "description": "List, create, join, leave, manage members, settings, and topics.\n\nActions:\n- list (-> limit=50)\n- info (chat_id)\n- create (title -> is_channel)\n- join (link_or_hash)\n- leave (chat_id)\n- members (chat_id -> limit=50)\n- admin (chat_id, user_id -> demote)\n- settings (chat_id, title|description)\n- topics (chat_id, topic_action -> topic_id, topic_name)\n",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "chat_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chat Id"
+        },
+        "demote": {
+          "default": false,
+          "title": "Demote",
+          "type": "boolean"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "is_channel": {
+          "default": false,
+          "title": "Is Channel",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 50,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "link_or_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Link Or Hash"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "topic_action": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Topic Action"
+        },
+        "topic_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Topic Id"
+        },
+        "topic_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Topic Name"
+        },
+        "user_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Id"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "chatArguments",
+      "type": "object"
+    },
+    "name": "chat",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "chatDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Telegram Media"
+    },
+    "description": "Send photos, files, voice, video, and download media from messages.\n\nActions (file_path_or_url: local path or URL):\n- send_photo (chat_id, file_path_or_url -> caption)\n- send_file (chat_id, file_path_or_url -> caption)\n- send_voice (chat_id, file_path_or_url -> caption)\n- send_video (chat_id, file_path_or_url -> caption)\n- download (chat_id, message_id -> output_dir; bot mode also requires file_id)\n",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "caption": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Caption"
+        },
+        "chat_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chat Id"
+        },
+        "file_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "File Id"
+        },
+        "file_path_or_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "File Path Or Url"
+        },
+        "message_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message Id"
+        },
+        "output_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Dir"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "mediaArguments",
+      "type": "object"
+    },
+    "name": "media",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "mediaDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Telegram Contacts"
+    },
+    "description": "Manage contacts: list, search, add, and block/unblock users (user mode only).\n\nActions:\n- list: Show all contacts\n- search (query): Find contacts by name\n- add (phone, first_name -> last_name)\n- block (user_id -> unblock=true)\n",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "first_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Name"
+        },
+        "last_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Name"
+        },
+        "phone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Phone"
+        },
+        "query": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Query"
+        },
+        "unblock": {
+          "default": false,
+          "title": "Unblock",
+          "type": "boolean"
+        },
+        "user_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Id"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "contactArguments",
+      "type": "object"
+    },
+    "name": "contact",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "contactDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Telegram Config"
+    },
+    "description": "Server configuration and runtime settings.\n\nActions (required params):\n- status: Show connection state, mode, and current config\n- set (key+value, or message_limit|timeout): Update a runtime limit.\n  Generic form: set(key='message_limit', value='50'). Typed sugar:\n  set(message_limit=50).\n- cache_clear: Clear internal caches\n",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Key"
+        },
+        "message_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message Limit"
+        },
+        "timeout": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeout"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "configArguments",
+      "type": "object"
+    },
+    "name": "config",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "configDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Telegram Help"
+    },
+    "description": "Get full documentation for any topic.\n\nTopics: telegram | messages | chats | media | contacts | all (default: all)\n",
+    "inputSchema": {
+      "properties": {
+        "topic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Topic"
+        }
+      },
+      "title": "helpArguments",
+      "type": "object"
+    },
+    "name": "help",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "helpOutput",
+      "type": "object"
+    }
+  }
+]

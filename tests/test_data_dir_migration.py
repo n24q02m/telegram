@@ -16,6 +16,7 @@ from telegram import config as config_mod
 from telegram.config import (
     DATA_DIR_NAME,
     LEGACY_DATA_DIR_NAME,
+    QUARANTINED_SECRET_NAME,
     Settings,
     resolve_default_data_dir,
 )
@@ -57,9 +58,12 @@ def test_legacy_only_is_moved_and_read_back(home):
     assert resolved == target
     assert target.is_dir()
     assert not (home / ".better-telegram-mcp").exists()
-    # Contents preserved byte-for-byte.
+    # Contents preserved byte-for-byte. The pre-hull 64-hex-char ``.secret``
+    # is not a hull machine key, so it is renamed aside (never read or
+    # deleted) to free hull's machine-key path.
     assert (target / "default.session").read_bytes() == b"telethon-session-bytes"
-    assert (target / ".secret").read_text() == "ab" * 32
+    assert not (target / ".secret").exists()
+    assert (target / QUARANTINED_SECRET_NAME).read_text() == "ab" * 32
     assert (target / "user_sessions" / "sub-1.session").read_bytes() == b"per-sub"
 
 
@@ -178,7 +182,7 @@ def test_settings_env_override_bypasses_migration(home, monkeypatch, tmp_path):
 
 def test_check_saved_sessions_after_migration(home, monkeypatch):
     monkeypatch.delenv("MCP_STORAGE_BACKEND", raising=False)
-    from telegram.relay_setup import check_saved_sessions
+    from telegram.sessions import check_saved_sessions
 
     _seed_legacy(home)
 
@@ -192,7 +196,7 @@ def test_check_saved_sessions_honours_data_dir_override(home, monkeypatch, tmp_p
     # saved-session probe must look there too -- and must not move the
     # legacy default dir as a side effect of an explicit override.
     monkeypatch.delenv("MCP_STORAGE_BACKEND", raising=False)
-    from telegram.relay_setup import check_saved_sessions
+    from telegram.sessions import check_saved_sessions
 
     legacy = _seed_legacy(home)
     custom = tmp_path / "custom"

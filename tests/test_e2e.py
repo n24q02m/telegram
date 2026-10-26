@@ -1,25 +1,26 @@
-"""Full E2E test for the telegram MCP server -- single file, 3 setup modes, 2 backend modes.
+"""Full E2E test for the telegram MCP server -- 2 setup modes, 2 backend modes.
 
-Tests 7 tools, 31 actions via MCP protocol.
+Tests 6 tools, 31 actions via the MCP protocol over stdio.
 Bot mode tests a subset (bot API limitations).
 User mode tests all actions.
 
+Credentials come from env vars (``TELEGRAM_BOT_TOKEN`` / ``TELEGRAM_PHONE``)
+or from a prior ``telegram auth`` on this machine. These tests talk to the
+real Telegram API and are excluded from the default ``pytest`` run.
+
 Usage:
     # Bot mode
-    uv run pytest tests/test_e2e.py --setup=relay --backend=bot --browser=chrome -v -s
-    uv run pytest tests/test_e2e.py --setup=env --backend=bot -v
+    uv run pytest tests/test_e2e.py -m e2e --setup=env --backend=bot -v
 
-    # User mode
-    uv run pytest tests/test_e2e.py --setup=relay --backend=user --browser=chrome -v -s
-    uv run pytest tests/test_e2e.py --setup=env --backend=user -v
+    # User mode (run `telegram auth --phone <+number>` first)
+    uv run pytest tests/test_e2e.py -m e2e --setup=env --backend=user -v
 
-    # Plugin mode
-    uv run pytest tests/test_e2e.py --setup=plugin --backend=bot -v
+    # Plugin mode (published package)
+    uv run pytest tests/test_e2e.py -m e2e --setup=plugin --backend=bot -v
 """
 
 from __future__ import annotations
 
-import asyncio
 import os
 import warnings
 
@@ -43,11 +44,7 @@ EXPECTED_TOOLS = {
     "contact",
     "config",
     "help",
-    "config__open_relay",
 }
-
-BOT_CREDENTIAL_VARS = ["TELEGRAM_BOT_TOKEN"]
-USER_CREDENTIAL_VARS = ["TELEGRAM_PHONE"]
 
 
 @pytest.fixture(scope="module")
@@ -60,19 +57,8 @@ def backend_mode(request):
     return request.config.getoption("--backend")
 
 
-@pytest.fixture(scope="module")
-def browser_name(request):
-    return request.config.getoption("--browser")
-
-
-def _build_server_params(setup_mode: str, backend_mode: str):
-    # Strip credential vars so relay mode starts without them
-    strip_vars = BOT_CREDENTIAL_VARS if backend_mode == "bot" else USER_CREDENTIAL_VARS
-
-    if setup_mode == "relay":
-        env = {k: v for k, v in os.environ.items() if k not in strip_vars}
-        params = StdioServerParameters(command="uv", args=["run", "telegram"], env=env)
-    elif setup_mode == "env":
+def _build_server_params(setup_mode: str):
+    if setup_mode == "env":
         params = StdioServerParameters(
             command="uv", args=["run", "telegram"], env=dict(os.environ)
         )
@@ -90,36 +76,13 @@ def _build_server_params(setup_mode: str, backend_mode: str):
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
-async def session(setup_mode, backend_mode, browser_name):
-    params = _build_server_params(setup_mode, backend_mode)
+async def session(setup_mode):
+    params = _build_server_params(setup_mode)
 
     try:
         async with stdio_client(params) as (read_stream, write_stream):
             async with ClientSession(read_stream, write_stream) as s:
-                # In relay mode, server's relay_setup.ensure_config() blocks
-                # lifespan until user submits credentials. The server opens the
-                # browser automatically. s.initialize() completes after config
-                # is received.
                 await s.initialize()
-
-                if setup_mode == "relay":
-                    # After initialize, server is configured. Verify auth.
-                    timeout = 300 if backend_mode == "user" else 120
-                    deadline = asyncio.get_event_loop().time() + timeout
-                    while asyncio.get_event_loop().time() < deadline:
-                        try:
-                            r = await s.call_tool("config", {"action": "status"})
-                            text = parse_result_allow_error(r)
-                            if (
-                                "connected" in text.lower()
-                                or "authenticated" in text.lower()
-                            ):
-                                print("\n>>> Telegram authenticated.", flush=True)
-                                break
-                        except Exception:
-                            pass
-                        await asyncio.sleep(3)
-
                 yield s
     except (RuntimeError, ExceptionGroup) as exc:
         msg = str(exc).lower()

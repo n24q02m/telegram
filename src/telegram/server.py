@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import functools
 import logging
-import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
+from fastmcp import FastMCP
+from hull_core.auth import current_user
 from loguru import logger
-from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+
+from telegram import __version__
 
 from .backends.base import TelegramBackend
 from .config import Settings
@@ -26,6 +28,13 @@ from .utils.formatting import err, ok
 # (https://api.telegram.org/bot<TOKEN>/...) cannot leak into stderr.
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
+DEFAULT_NAMESPACE = "default"
+# The repo README documents the hull setup (CLI auth + config.toml modes).
+SETUP_DOCS_URL = "https://github.com/n24q02m/telegram#setup"
+
+# Backend of the ``default`` namespace: stdio, and HTTP ``no-auth`` / ``token``
+# mode (hull maps both to ``default``). Other namespaces (HTTP ``multi`` mode)
+# are served by ``auth.telegram_auth_provider``.
 _backend: TelegramBackend | None = None
 _settings: Settings | None = None
 _pending_auth: bool = False
@@ -35,29 +44,27 @@ _runtime_config: dict[str, int] = {
     "timeout": 30,
 }
 
-# Track whether we're in multi-user HTTP mode
-_multi_user_mode: bool = False
-_get_current_backend = None
+
+def _namespace() -> str:
+    return current_user().namespace
 
 
 def get_backend() -> TelegramBackend:
-    """Get the active backend.
+    """The connected backend of the caller's hull namespace.
 
-    In multi-user HTTP mode: returns the per-user backend from ContextVar.
-    In stdio/single-user mode: returns the global _backend.
+    ``default`` (stdio, ``no-auth``, ``token``) uses the global backend
+    created by the lifespan; any other namespace uses the backend the
+    per-namespace provider has already connected.
     """
-    if _multi_user_mode:
-        global _get_current_backend
-        if _get_current_backend is None:
-            # ⚡ Bolt: Lazy-load get_current_backend once to avoid the overhead of
-            # evaluating the import statement on every single tool invocation.
-            from .transports.http import get_current_backend
+    namespace = _namespace()
+    if namespace != DEFAULT_NAMESPACE:
+        from .auth.telegram_auth_provider import get_provider
 
-            _get_current_backend = get_current_backend
-
-        backend = _get_current_backend()
-        if backend is not None:
-            return backend
+        backend = get_provider().resolve_backend(namespace)
+        if backend is None:
+            msg = f"No connected Telegram backend for namespace {namespace!r}."
+            raise RuntimeError(msg)
+        return backend
 
     if _backend is None:
         msg = "Backend not initialized. Server lifespan not started."
@@ -72,33 +79,63 @@ def get_settings() -> Settings:
     return _settings
 
 
+async def _ready_backend() -> TelegramBackend | None:
+    """Backend for this call, or ``None`` when the namespace is not ready."""
+    namespace = _namespace()
+    if namespace == DEFAULT_NAMESPACE:
+        if _unconfigured or _pending_auth:
+            return None
+        return get_backend()
+
+    from .auth.telegram_auth_provider import get_provider
+
+    return await get_provider().get(namespace)
+
+
+def _is_unconfigured(namespace: str) -> bool:
+    if namespace == DEFAULT_NAMESPACE:
+        return _unconfigured
+    from .auth.telegram_auth_provider import settings_for_namespace
+
+    return settings_for_namespace(namespace) is None
+
+
+def _user_flag(namespace: str) -> str:
+    return "" if namespace == DEFAULT_NAMESPACE else f" --user {namespace}"
+
+
 def _not_ready_response() -> dict[str, Any]:
-    if _unconfigured:
-        return ok(
-            {
-                "error": "Not configured",
-                "setup": {
-                    "relay": "Use config(action='setup_start') to configure via browser",
-                    "bot_mode": {
-                        "env_var": "TELEGRAM_BOT_TOKEN",
-                        "how": "Get token from @BotFather on Telegram",
-                    },
-                    "user_mode": {
-                        "env_vars": ["TELEGRAM_PHONE"],
-                        "how": "Set your phone number (API credentials have built-in defaults)",
-                    },
-                },
-            }
-        )
+    namespace = _namespace()
+    flag = _user_flag(namespace)
+    if _is_unconfigured(namespace):
+        setup: dict[str, Any] = {
+            "bot_mode": {
+                "command": f"telegram auth --bot-token <token>{flag}",
+                "how": "Get token from @BotFather on Telegram",
+            },
+            "user_mode": {
+                "command": f"telegram auth --phone <+number>{flag}",
+                "how": "Interactive OTP/2FA (API credentials have built-in defaults)",
+            },
+        }
+        if namespace == DEFAULT_NAMESPACE:
+            setup["bot_mode"]["env_var"] = "TELEGRAM_BOT_TOKEN"
+            setup["user_mode"]["env_vars"] = ["TELEGRAM_PHONE"]
+        return ok({"error": "Not configured", "setup": setup})
     return err(
         "Telegram session not authenticated. "
-        "Use config(action='setup_reset') then config(action='setup_start') to reconfigure, "
-        "or set TELEGRAM_PHONE in your MCP server env config."
+        f"Run `telegram auth --phone <+number>{flag}` on the server machine, "
+        "then restart the server."
     )
 
 
 def _ensure_settings() -> Settings:
-    """Initialize settings and resolve credential state."""
+    """Initialize settings for the ``default`` namespace.
+
+    Env vars win; otherwise the credentials saved by ``telegram auth`` are
+    loaded explicitly (never exported into ``os.environ``, which would leak
+    them to every subprocess).
+    """
     settings = Settings()
     if not settings.is_configured:
         from .credential_state import (
@@ -108,14 +145,9 @@ def _ensure_settings() -> Settings:
 
         state = resolve_credential_state()
         if state.value == "configured":
-            # Load the saved config explicitly rather than relying on os.environ
-            # injection: exporting credentials into the process environment
-            # leaks them to every subprocess and third-party dependency,
-            # defeating the encrypted store. _read_single_user_config reads the
-            # per-plugin store (falling back to the legacy config.enc).
             saved_config = _read_single_user_config()
             if saved_config:
-                settings = Settings.from_relay_config(saved_config)
+                settings = Settings.from_saved_config(saved_config)
     return settings
 
 
@@ -134,23 +166,12 @@ def _create_backend_instance(settings: Settings) -> TelegramBackend:
         return UserBackend(settings)
 
 
-def _register_hot_reload() -> None:
-    """Register hot-reload callback for relay credentials."""
-    from .credential_state import set_on_configured
+async def _shutdown_provider() -> None:
+    from .auth import telegram_auth_provider
 
-    async def _reinit_backend_from_relay() -> None:
-        global _backend, _settings, _pending_auth, _unconfigured
-        _settings = _ensure_settings()
-        if not _settings.is_configured:
-            return
-        logger.info("Hot-reloading backend from relay config ({})", _settings.mode)
-        _backend = _create_backend_instance(_settings)
-        await _backend.connect()
-        _unconfigured = False
-        _pending_auth = False
-        logger.info("Backend hot-reloaded successfully ({})", _settings.mode)
-
-    set_on_configured(_reinit_backend_from_relay)
+    provider = telegram_auth_provider._global_provider
+    if provider is not None:
+        await provider.shutdown()
 
 
 @asynccontextmanager
@@ -159,33 +180,19 @@ async def _lifespan(server: FastMCP) -> AsyncIterator[None]:
     _settings = _ensure_settings()
 
     if not _settings.is_configured:
-        if _multi_user_mode:
-            # Multi-user HTTP mode: per-user backends injected via ContextVar.
-            # No global backend needed — skip unconfigured state.
-            logger.info("Multi-user HTTP mode: per-user backends via bearer auth.")
-            try:
-                yield
-            finally:
-                pass
-            return
-
         _unconfigured = True
         logger.warning(
-            "No Telegram credentials configured. "
-            "help and config tools available; other tools will show setup instructions. "
-            "Set TELEGRAM_BOT_TOKEN or TELEGRAM_API_ID + TELEGRAM_API_HASH to enable all tools."
+            "No Telegram credentials configured for the default namespace. "
+            "help and config tools available; other tools will show setup "
+            "instructions. Run `telegram auth --bot-token <token>` or "
+            "`telegram auth --phone <+number>` (or set TELEGRAM_BOT_TOKEN), "
+            "then restart."
         )
-
-        _register_hot_reload()
-
         try:
             yield
         finally:
             _unconfigured = False
-            # Disconnect backend if it was created via hot-reload
-            if _backend is not None:
-                await _backend.disconnect()
-                logger.info("Disconnected from Telegram")
+            await _shutdown_provider()
         return
 
     logger.info("Mode: {}", _settings.mode)
@@ -196,48 +203,30 @@ async def _lifespan(server: FastMCP) -> AsyncIterator[None]:
     if _settings.mode == "user" and not await _backend.is_authorized():
         _pending_auth = True
         logger.warning(
-            "Session not authorized. "
-            "Remove credential env vars and restart to trigger relay setup "
-            "(relay handles OTP/2FA via bidirectional messaging)."
+            "Session not authorized. Run `telegram auth --phone <+number>` "
+            "and restart the server."
         )
 
     try:
         yield
     finally:
         await _backend.disconnect()
+        await _shutdown_provider()
         logger.info("Disconnected from Telegram")
 
 
 mcp = FastMCP(
     "telegram",
+    version=__version__,
     lifespan=_lifespan,
 )
-
-# FastMCP (the SDK class) has no ``version=`` kwarg, so it defaults the
-# advertised serverInfo.version to the mcp SDK's own version. Pin it to this
-# package's version so initialize responses report the right value.
-from telegram import __version__  # noqa: E402
-
-mcp._mcp_server.version = __version__
-
-# Register the standard `config__open_relay` MCP tool so the LLM can re-trigger
-# the relay form via tool call when credentials are missing or expired. In
-# stdio mode (PUBLIC_URL unset), the tool returns ``stdio_unsupported`` so
-# the caller surfaces a clear "switch to HTTP mode" message. In HTTP mode,
-# the tool opens ``<PUBLIC_URL>/authorize`` which renders the multi-step
-# Telegram credential form (phone -> OTP -> 2FA password) already wired into
-# mcp-core's HTTP OAuth AS via `custom_credential_form_html` in `run_http`.
-from mcp_core.relay.tool_helpers import register_open_relay_tool  # noqa: E402
-
-_PUBLIC_URL = os.environ.get("PUBLIC_URL")
-register_open_relay_tool(mcp, "better-telegram-mcp", _PUBLIC_URL)
 
 
 def _wrap_tool(tool_name: str):
     """Decorate an ``@mcp.tool`` so external Telegram content is XPIA-marked.
 
-    The wrapped tool returns a plain ``dict``; this turns it into a
-    ``CallToolResult`` so both response channels are defended: the text block
+    The wrapped tool returns a plain ``dict``; this turns it into a FastMCP
+    ``ToolResult`` so both response channels are defended: the text block
     gains ``<untrusted_{tool}_content>`` boundary tags and ``structuredContent``
     carries the envelope markers (a client reading structured output never sees
     the text block). FastMCP still derives the tool's ``outputSchema`` from the
@@ -266,10 +255,10 @@ def _wrap_tool(tool_name: str):
 @mcp.tool(
     annotations=ToolAnnotations(
         title="Telegram Messages",
-        readOnlyHint=False,
-        destructiveHint=True,
-        idempotentHint=False,
-        openWorldHint=True,
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+        open_world_hint=True,
     )
 )
 @_wrap_tool("message")
@@ -299,7 +288,8 @@ async def message(
     - search (query -> chat_id, limit=20)
     - history (chat_id -> limit=20, offset_id)
     """
-    if _unconfigured or _pending_auth:
+    backend = await _ready_backend()
+    if backend is None:
         return _not_ready_response()
 
     args = MessagesArgs(
@@ -316,16 +306,16 @@ async def message(
         limit=limit,
         offset_id=offset_id,
     )
-    return await handle_messages(get_backend(), args)
+    return await handle_messages(backend, args)
 
 
 @mcp.tool(
     annotations=ToolAnnotations(
         title="Telegram Chats",
-        readOnlyHint=False,
-        destructiveHint=True,
-        idempotentHint=False,
-        openWorldHint=True,
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+        open_world_hint=True,
     )
 )
 @_wrap_tool("chat")
@@ -356,7 +346,8 @@ async def chat(
     - settings (chat_id, title|description)
     - topics (chat_id, topic_action -> topic_id, topic_name)
     """
-    if _unconfigured or _pending_auth:
+    backend = await _ready_backend()
+    if backend is None:
         return _not_ready_response()
 
     opts = ChatOptions(
@@ -372,16 +363,16 @@ async def chat(
         topic_id=topic_id,
         topic_name=topic_name,
     )
-    return await handle_chats(get_backend(), action, opts)
+    return await handle_chats(backend, action, opts)
 
 
 @mcp.tool(
     annotations=ToolAnnotations(
         title="Telegram Media",
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
-        openWorldHint=True,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=True,
     )
 )
 @_wrap_tool("media")
@@ -403,7 +394,8 @@ async def media(
     - send_video (chat_id, file_path_or_url -> caption)
     - download (chat_id, message_id -> output_dir; bot mode also requires file_id)
     """
-    if _unconfigured or _pending_auth:
+    backend = await _ready_backend()
+    if backend is None:
         return _not_ready_response()
 
     opts = MediaOptions(
@@ -414,16 +406,16 @@ async def media(
         output_dir=output_dir,
         file_id=file_id,
     )
-    return await handle_media(get_backend(), action, opts)
+    return await handle_media(backend, action, opts)
 
 
 @mcp.tool(
     annotations=ToolAnnotations(
         title="Telegram Contacts",
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
-        openWorldHint=True,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=True,
     )
 )
 @_wrap_tool("contact")
@@ -444,7 +436,8 @@ async def contact(
     - add (phone, first_name -> last_name)
     - block (user_id -> unblock=true)
     """
-    if _unconfigured or _pending_auth:
+    backend = await _ready_backend()
+    if backend is None:
         return _not_ready_response()
 
     opts = ContactsOptions(
@@ -455,16 +448,37 @@ async def contact(
         user_id=user_id,
         unblock=unblock,
     )
-    return await handle_contacts(get_backend(), action, options=opts)
+    return await handle_contacts(backend, action, options=opts)
+
+
+def _unconfigured_status(namespace: str) -> dict[str, Any]:
+    flag = _user_flag(namespace)
+    return ok(
+        {
+            "mode": None,
+            "connected": False,
+            "authorized": False,
+            "configured": False,
+            "config": _runtime_config,
+            "setup": {
+                "bot_mode": f"Run `telegram auth --bot-token <token>{flag}` "
+                "(get from @BotFather)",
+                "user_mode": f"Run `telegram auth --phone <+number>{flag}`"
+                " (API credentials have built-in defaults)",
+            },
+            "hint": "Configure with the `telegram auth` CLI on the server "
+            "machine, then restart the server.",
+        }
+    )
 
 
 @mcp.tool(
     annotations=ToolAnnotations(
         title="Telegram Config",
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
-        openWorldHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
     )
 )
 async def config(
@@ -482,110 +496,22 @@ async def config(
       Generic form: set(key='message_limit', value='50'). Typed sugar:
       set(message_limit=50).
     - cache_clear: Clear internal caches
-    - setup_status: Show credential state and relay URL
-    - setup_start (-> key='force'): Start relay setup via browser
-    - setup_reset: Clear saved credentials
-    - setup_complete: Re-resolve credentials after relay config
     """
-    # Setup actions work regardless of configured state
-    match action:
-        case "setup_status":
-            from .credential_state import get_setup_url, get_state
+    namespace = _namespace()
+    if namespace == DEFAULT_NAMESPACE:
+        # A configured-but-unauthorized user session still reports status.
+        backend = None if _unconfigured else get_backend()
+    else:
+        from .auth.telegram_auth_provider import get_provider
 
-            state = get_state()
-            return ok(
-                {
-                    "state": state.value,
-                    "setup_url": get_setup_url(),
-                    "configured": not _unconfigured,
-                    "pending_auth": _pending_auth,
-                    "env_keys": [
-                        k
-                        for k in {"TELEGRAM_BOT_TOKEN", "TELEGRAM_PHONE"}
-                        if os.environ.get(k)
-                    ],
-                }
-            )
+        backend = await get_provider().get(namespace)
 
-        case "setup_start":
-            from .credential_state import CredentialState, get_state
-
-            if get_state() == CredentialState.CONFIGURED and not (
-                key and key.lower() == "force"
-            ):
-                return ok(
-                    {
-                        "status": "already_configured",
-                        "message": "Already configured. Use key='force' to reconfigure.",
-                    }
-                )
-            # Per spec 2026-05-01-stdio-pure-http-multiuser.md: stdio mode does
-            # not spawn an in-process credential form. Browser-based setup is
-            # the responsibility of HTTP mode; this branch tells the user how
-            # to switch.
-            return ok(
-                {
-                    "status": "stdio_unsupported",
-                    "message": (
-                        "Browser-based setup is HTTP-mode only. "
-                        "For stdio mode, set TELEGRAM_BOT_TOKEN in your "
-                        "plugin/server config (get from @BotFather). "
-                        "For user-mode auth (phone+OTP), switch to HTTP mode "
-                        "(see https://mcp.n24q02m.com/servers/better-telegram-mcp/setup/)."
-                    ),
-                }
-            )
-
-        case "setup_reset":
-            from .credential_state import reset_state
-
-            reset_state()
-            return ok(
-                {
-                    "status": "ok",
-                    "message": "Credentials cleared. Use setup_start to reconfigure.",
-                }
-            )
-
-        case "setup_complete":
-            from .credential_state import (
-                CredentialState,
-                get_state,
-                resolve_credential_state,
-            )
-
-            resolve_credential_state()
-            state = get_state()
-            return ok(
-                {
-                    "status": "ok",
-                    "state": state.value,
-                    "message": "Credential state refreshed.",
-                }
-            )
-
-    if _unconfigured:
-        if action == "status":
-            return ok(
-                {
-                    "mode": None,
-                    "connected": False,
-                    "authorized": False,
-                    "configured": False,
-                    "config": _runtime_config,
-                    "setup": {
-                        "bot_mode": "Set TELEGRAM_BOT_TOKEN (get from @BotFather)",
-                        "user_mode": (
-                            "Set TELEGRAM_PHONE"
-                            " (API credentials have built-in defaults)"
-                        ),
-                    },
-                    "hint": "Use action='setup_start' to configure via browser relay.",
-                }
-            )
+    if backend is None:
+        if action == "status" and _is_unconfigured(namespace):
+            return _unconfigured_status(namespace)
         return _not_ready_response()
     return await handle_config(
-        get_backend(),
+        backend,
         action,
         message_limit=message_limit,
         timeout=timeout,
@@ -597,10 +523,10 @@ async def config(
 @mcp.tool(
     annotations=ToolAnnotations(
         title="Telegram Help",
-        readOnlyHint=True,
-        destructiveHint=False,
-        idempotentHint=True,
-        openWorldHint=False,
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
     )
 )
 async def help(topic: str | None = None) -> str:
@@ -617,85 +543,58 @@ from .resources import register_resources  # noqa: E402
 register_resources(mcp)
 
 
-def create_http_mcp_server() -> FastMCP:
-    """Create a FastMCP server instance for multi-user HTTP mode.
+_UNCONFIGURED_STDIO_HINT = (
+    "[telegram] No Telegram credentials configured for stdio mode.\n"
+    "\n"
+    "Run one of:\n"
+    "  telegram auth --bot-token <token>   (bot mode, get token from @BotFather)\n"
+    "  telegram auth --phone <+number>     (user mode, interactive OTP/2FA)\n"
+    "  (login is a deprecated alias of auth)\n"
+    "\n"
+    "Or set TELEGRAM_BOT_TOKEN in your plugin/server env config.\n"
+    "Check the result with `telegram status`.\n"
+    f"Documentation: {SETUP_DOCS_URL}\n"
+)
 
-    Returns the existing mcp instance (tools are shared across sessions).
-    Per-user backend is injected via ContextVar per request.
+
+def _parse_serve_args(argv: list[str]):
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="telegram", add_help=False)
+    parser.add_argument("--http", action="store_true", default=False)
+    parser.add_argument("--host", default=None)
+    parser.add_argument("--port", type=int, default=None)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Start the server: stdio by default, HTTP with ``--http``.
+
+    ``MCP_TRANSPORT=http`` / ``TRANSPORT_MODE=http`` also select HTTP.
+    ``--host`` / ``--port`` override ``~/.telegram/config.toml`` ``[server]``.
     """
-    global _multi_user_mode
-    _multi_user_mode = True
-    return mcp
-
-
-async def run_http(port: int = 0) -> None:
-    """Run as HTTP server with local OAuth 2.1 AS via mcp-core."""
-    from mcp_core.transport.local_server import run_http_server
-
-    from .credential_state import on_step_submitted, save_credentials
-    from .relay_schema import RELAY_SCHEMA, STABLE_SUB_ENABLED, render_telegram_form
-
-    host = os.environ.get("HOST")
-
-    await run_http_server(
-        mcp,
-        # Pre-rename value kept on purpose (see relay_setup.SERVER_NAME).
-        server_name="better-telegram-mcp",
-        relay_schema=RELAY_SCHEMA,
-        port=port,
-        host=host,
-        on_credentials_saved=save_credentials,
-        on_step_submitted=on_step_submitted,
-        custom_credential_form_html=render_telegram_form,
-        stable_sub_enabled=STABLE_SUB_ENABLED,
-    )
-
-
-def main() -> None:
+    import os
     import sys
 
+    args = _parse_serve_args(sys.argv[1:] if argv is None else argv)
     is_http = (
-        "--http" in sys.argv
+        args.http
         or os.environ.get("MCP_TRANSPORT") == "http"
         or os.environ.get("TRANSPORT_MODE") == "http"
     )
 
     if not is_http:
-        # Stdio mode (default): run FastMCP stdio server directly. No bridge layer.
-        # Universal MCP client compatibility (Claude Code, Cursor, VS Code Copilot, etc.).
-        # Credentials come from env, the encrypted single-user config, or a saved
-        # Telethon session (bot token OR phone+session). resolve_credential_state
-        # consults all three; the lifespan's _ensure_settings loads a saved
-        # config explicitly (Settings.from_relay_config) without mutating
-        # os.environ. Only a truly unconfigured stdio server exits.
+        # Credentials come from env, the encrypted saved config or a saved
+        # Telethon session; only a truly unconfigured stdio server exits.
         from .credential_state import CredentialState, resolve_credential_state
 
         if resolve_credential_state() != CredentialState.CONFIGURED:
-            msg = (
-                "[telegram] No Telegram credentials configured for "
-                "stdio mode.\n"
-                "\n"
-                "Run one of:\n"
-                "  telegram auth --bot-token <token>   "
-                "(bot mode, get token from @BotFather)\n"
-                "  telegram auth --phone <+number>     "
-                "(user mode, interactive OTP/2FA)\n"
-                "  (login is a deprecated alias of auth)\n"
-                "\n"
-                "Or set TELEGRAM_BOT_TOKEN in your plugin/server env config.\n"
-                "\n"
-                "Documentation: https://mcp.n24q02m.com/servers/better-telegram-mcp/setup/\n"
-            )
-            sys.stderr.write(msg)
-            sys.exit(1)
-        mcp.run(transport="stdio")
-        return
+            sys.stderr.write(_UNCONFIGURED_STDIO_HINT)
+            return 1
+        # show_banner=False: the banner also runs a PyPI version check.
+        mcp.run(transport="stdio", show_banner=False)
+        return 0
 
-    # HTTP mode (opt-in via --http or MCP_TRANSPORT=http or TRANSPORT_MODE=http):
-    # dispatch through transports/http.py so the multi-user OAuth 2.1 branch,
-    # the refuse-guard for broken single-user-on-public deploys, and the
-    # single-user fallback all live in one place.
-    from .config import Settings
     from .transports.http import start_http
 
-    start_http(Settings())
+    return start_http(host=args.host, port=args.port)

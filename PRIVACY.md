@@ -1,26 +1,20 @@
 # Privacy Policy — telegram
 
-**Last updated:** 2026-03-18
+**Last updated:** 2026-10-12
 
 ## Data Collection
 
 The telegram MCP server acts as a bridge between MCP clients (Claude, Cursor, etc.) and the Telegram API. It does **not** collect, store, or transmit any user data beyond what is necessary for the current operation.
 
-## Auth Relay Server
+The project does not operate a hosted endpoint or an auth relay. The server runs on a machine you control, and sign-in (bot token, or phone + OTP + 2FA) happens locally through the `telegram auth` command.
 
-When using the remote auth relay at `better-telegram-mcp.n24q02m.com`:
+## Local Storage
 
-- **OTP codes** are relayed in-memory only and deleted immediately after use. No codes are logged or persisted.
-- **Phone numbers** are masked (e.g., `+849***8069`) before being sent to the relay. The relay never receives or stores your full phone number.
-- **2FA passwords** are relayed in-memory only and deleted immediately after use.
-- **Sessions expire** after 10 minutes. The relay is stateless — no database, no disk storage.
-- **Logging**: Only anonymous request metadata (timestamps, status codes) is logged. No message content, contacts, or credentials are logged.
-
-## Session Files
-
+- Saved credentials (bot token or phone number) are encrypted with AES-256-GCM under a machine key at `~/.telegram/.secret` and stored in `~/.telegram/config.json` (`~/.telegram/subs/<namespace>/` for multi-user HTTP mode).
+- OTP codes and 2FA passwords are used only during `telegram auth` and are never written to disk or environment variables.
 - Telegram session files are stored locally at `~/.telegram/` (moved once from the pre-rename `~/.better-telegram-mcp/`) with `600` permissions (owner-only).
 - Session files contain your Telegram authentication. Treat them like passwords.
-- Session files are never transmitted to any server.
+- Credentials and session files are never transmitted to any server other than Telegram.
 
 ## Telegram API Access
 
@@ -29,8 +23,6 @@ When authenticated, the MCP server can access your Telegram account with the sam
 ## Third-Party Services
 
 - **Telegram API** (`api.telegram.org`, MTProto): Your data is subject to [Telegram's Privacy Policy](https://telegram.org/privacy).
-- **Oracle Cloud**: The auth relay server runs on Oracle Cloud Infrastructure. See [Oracle Cloud Privacy](https://www.oracle.com/legal/privacy/services-privacy-policy.html).
-- **Cloudflare**: DNS and tunnel proxy. See [Cloudflare Privacy](https://www.cloudflare.com/privacypolicy/).
 
 ## Contact
 

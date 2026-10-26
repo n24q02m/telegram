@@ -1,341 +1,224 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from structured import payload
+from fastmcp import Client
+from hull_core.auth import AuthContext, reset_current_user, set_current_user
+from structured import payload, text
 
-from telegram.server import (
-    create_http_mcp_server,
-    get_backend,
-    get_settings,
-    main,
-    mcp,
-    run_http,
-)
+from telegram.server import get_backend, get_settings, main, mcp
+
+EXPECTED_TOOLS = {"message", "chat", "media", "contact", "config", "help"}
 
 
-def test_mcp_has_7_tools():
-    tools = mcp._tool_manager._tools
-    assert len(tools) == 7
-    expected = {
-        "message",
-        "chat",
-        "media",
-        "contact",
-        "config",
-        "help",
-        "config__open_relay",
-    }
-    assert set(tools.keys()) == expected
+@contextmanager
+def as_namespace(namespace: str):
+    """Run tool code as a hull caller of ``namespace`` (multi mode)."""
+    token = set_current_user(
+        AuthContext(uid=namespace, namespace=namespace, mode="multi")
+    )
+    try:
+        yield
+    finally:
+        reset_current_user(token)
 
 
-def test_serverinfo_version_matches_package():
-    """serverInfo.version must report the package version, not the mcp SDK
-    version. FastMCP (SDK class) has no version kwarg, so server.py pins
-    _mcp_server.version = __version__; verify it propagates to the
-    initialization options advertised to clients."""
+@pytest.fixture
+def default_backend(mock_backend):
+    """Install ``mock_backend`` as the configured default-namespace backend."""
+    import telegram.server as srv
+
+    old = (srv._backend, srv._pending_auth, srv._unconfigured)
+    srv._backend = mock_backend
+    srv._pending_auth = False
+    srv._unconfigured = False
+    try:
+        yield mock_backend
+    finally:
+        srv._backend, srv._pending_auth, srv._unconfigured = old
+
+
+@pytest.fixture
+def server_state():
+    """Save and restore the module-level server state around a test."""
+    import telegram.server as srv
+
+    old = (srv._backend, srv._settings, srv._pending_auth, srv._unconfigured)
+    try:
+        yield srv
+    finally:
+        srv._backend, srv._settings, srv._pending_auth, srv._unconfigured = old
+
+
+async def test_mcp_has_6_tools():
+    tools = await mcp.list_tools()
+    assert {t.name for t in tools} == EXPECTED_TOOLS
+
+
+async def test_serverinfo_version_matches_package():
+    """serverInfo.version reports the package version, not the framework's."""
     from telegram import __version__
 
-    opts = mcp._mcp_server.create_initialization_options()
-    assert opts.server_version == __version__
+    async with Client(mcp) as client:
+        info = client.server_info
+    assert info.name == "telegram"
+    assert info.version == __version__
 
 
 def test_main_exists():
     assert callable(main)
 
 
-def test_get_backend_not_initialized():
-    import telegram.server as srv
-
-    old = srv._backend
-    try:
-        srv._backend = None
-        with pytest.raises(RuntimeError, match="Backend not initialized"):
-            get_backend()
-    finally:
-        srv._backend = old
+def test_get_backend_not_initialized(server_state):
+    server_state._backend = None
+    with pytest.raises(RuntimeError, match="Backend not initialized"):
+        get_backend()
 
 
-def test_get_settings_not_initialized():
-    import telegram.server as srv
-
-    old = srv._settings
-    try:
-        srv._settings = None
-        with pytest.raises(RuntimeError, match="Settings not initialized"):
-            get_settings()
-    finally:
-        srv._settings = old
+def test_get_settings_not_initialized(server_state):
+    server_state._settings = None
+    with pytest.raises(RuntimeError, match="Settings not initialized"):
+        get_settings()
 
 
-@pytest.mark.asyncio
-async def test_message_send(mock_backend):
-    import telegram.server as srv
+def test_get_settings_success(server_state):
+    from telegram.config import Settings
+
+    mock_settings = Settings(api_id=123, api_hash="abc", mode="bot")
+    server_state._settings = mock_settings
+    assert get_settings() == mock_settings
+
+
+# --- tools on the default namespace ---
+
+
+async def test_message_send(default_backend):
     from telegram.server import message
 
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = False
-        result = payload(await message(action="send", chat_id=123, text="hi"))
-        assert "message_id" in result
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
+    result = payload(await message(action="send", chat_id=123, text="hi"))
+    assert "message_id" in result
 
 
-@pytest.mark.asyncio
-async def test_message_backend_exception(mock_backend):
-    """message tool returns error dict when backend raises an exception."""
-    import telegram.server as srv
+async def test_message_result_has_text_and_structured_channels(default_backend):
+    """_wrap_tool keeps both channels: XPIA-tagged text + structuredContent."""
     from telegram.server import message
 
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = False
-        mock_backend.send_message.side_effect = RuntimeError("Backend failure")
-
-        result = payload(await message(action="send", chat_id=123, text="hi"))
-        assert "error" in result
-        assert "RuntimeError" in result["error"]
-        assert "Operation failed" in result["error"]
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
+    result = await message(action="send", chat_id=123, text="hi")
+    assert "<untrusted_message_content>" in text(result)
+    assert "message_id" in payload(result)
 
 
-@pytest.mark.asyncio
-async def test_chat_list(mock_backend):
-    import telegram.server as srv
+async def test_message_backend_exception(default_backend):
+    """message tool returns an error dict when the backend raises."""
+    from telegram.server import message
+
+    default_backend.send_message.side_effect = RuntimeError("Backend failure")
+    result = payload(await message(action="send", chat_id=123, text="hi"))
+    assert "RuntimeError" in result["error"]
+    assert "Operation failed" in result["error"]
+
+
+async def test_message_unknown_action(default_backend):
+    from telegram.server import message
+
+    result = payload(await message(action="nonexistent"))
+    assert "Unknown action" in result["error"]
+
+
+async def test_chat_list(default_backend):
     from telegram.server import chat
 
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = False
-        result = payload(await chat(action="list"))
-        assert "chats" in result
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
+    result = payload(await chat(action="list"))
+    assert "chats" in result
 
 
-@pytest.mark.asyncio
-async def test_media_send_photo(mock_backend):
-    import telegram.server as srv
+async def test_media_send_photo(default_backend):
     from telegram.server import media
 
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = False
-        result = payload(
-            await media(
-                action="send_photo",
-                chat_id=123,
-                file_path_or_url="https://example.com/photo.jpg",
-            )
+    result = payload(
+        await media(
+            action="send_photo",
+            chat_id=123,
+            file_path_or_url="https://example.com/photo.jpg",
         )
-        assert "message_id" in result
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
+    )
+    assert "message_id" in result
 
 
-@pytest.mark.asyncio
-async def test_contact_list(mock_backend):
-    import telegram.server as srv
+async def test_contact_list(default_backend):
     from telegram.server import contact
 
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = False
-        result = payload(await contact(action="list"))
-        assert "contacts" in result
-        mock_backend.list_contacts.assert_awaited_once()
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
+    result = payload(await contact(action="list"))
+    assert "contacts" in result
+    default_backend.list_contacts.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_contact_search(mock_backend):
-    import telegram.server as srv
+async def test_contact_search(default_backend):
     from telegram.server import contact
 
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = False
-        result = payload(await contact(action="search", query="John"))
-        assert "contacts" in result
-        mock_backend.search_contacts.assert_awaited_once_with("John")
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
+    result = payload(await contact(action="search", query="John"))
+    assert "contacts" in result
+    default_backend.search_contacts.assert_awaited_once_with("John")
 
 
-@pytest.mark.asyncio
-async def test_contact_add(mock_backend):
-    import telegram.server as srv
+async def test_contact_add(default_backend):
     from telegram.server import contact
 
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = False
-        result = payload(
-            await contact(
-                action="add",
-                phone="+1234567890",
-                first_name="John",
-                last_name="Doe",
-            )
+    result = payload(
+        await contact(
+            action="add", phone="+1234567890", first_name="John", last_name="Doe"
         )
-        assert "added" in result
-        mock_backend.add_contact.assert_awaited_once_with(
-            "+1234567890", "John", last_name="Doe"
-        )
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
+    )
+    assert "added" in result
+    default_backend.add_contact.assert_awaited_once_with(
+        "+1234567890", "John", last_name="Doe"
+    )
 
 
-@pytest.mark.asyncio
-async def test_contact_block(mock_backend):
-    import telegram.server as srv
+async def test_contact_block(default_backend):
     from telegram.server import contact
 
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = False
-        result = payload(await contact(action="block", user_id=123))
-        assert "blocked" in result
-        mock_backend.block_user.assert_awaited_once_with(123, unblock=False)
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
+    result = payload(await contact(action="block", user_id=123))
+    assert "blocked" in result
+    default_backend.block_user.assert_awaited_once_with(123, unblock=False)
 
 
-@pytest.mark.asyncio
-async def test_contact_unblock(mock_backend):
-    import telegram.server as srv
+async def test_contact_unblock(default_backend):
     from telegram.server import contact
 
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = False
-        result = payload(await contact(action="block", user_id=123, unblock=True))
-        assert "unblocked" in result
-        mock_backend.block_user.assert_awaited_once_with(123, unblock=True)
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
+    result = payload(await contact(action="block", user_id=123, unblock=True))
+    assert "unblocked" in result
+    default_backend.block_user.assert_awaited_once_with(123, unblock=True)
 
 
-@pytest.mark.asyncio
-async def test_contact_error(mock_backend):
-    import telegram.server as srv
+async def test_contact_error(default_backend):
     from telegram.server import contact
 
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = False
-        mock_backend.list_contacts.side_effect = Exception("test error")
-        result = payload(await contact(action="list"))
-        assert "error" in result
-        assert "Operation failed" in result["error"]
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
+    default_backend.list_contacts.side_effect = Exception("test error")
+    result = payload(await contact(action="list"))
+    assert "Operation failed" in result["error"]
 
 
-@pytest.mark.asyncio
-async def test_contact_unknown_action(mock_backend):
-    import telegram.server as srv
+async def test_contact_unknown_action(default_backend):
     from telegram.server import contact
 
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = False
-        result = payload(await contact(action="invalid_action"))
-        assert "error" in result
-        assert "Unknown action" in result["error"]
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
+    result = payload(await contact(action="invalid_action"))
+    assert "Unknown action" in result["error"]
 
 
-def test_get_settings_success():
-    import telegram.server as srv
-    from telegram.config import Settings
-    from telegram.server import get_settings
-
-    old = srv._settings
-    try:
-        mock_settings = Settings(api_id=123, api_hash="abc", mode="bot")
-        srv._settings = mock_settings
-        assert get_settings() == mock_settings
-    finally:
-        srv._settings = old
-
-
-@pytest.mark.asyncio
-async def test_message_unknown_action(mock_backend):
-    import telegram.server as srv
-    from telegram.server import message
-
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = False
-        result = payload(await message(action="nonexistent"))
-        assert "error" in result
-        assert "Unknown action" in result["error"]
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
-
-
-@pytest.mark.asyncio
-async def test_config_tool(mock_backend):
-    import telegram.server as srv
+async def test_config_tool(default_backend):
     from telegram.server import config
 
-    old = srv._backend
-    try:
-        srv._backend = mock_backend
-        result = await config(action="status")
-        assert "mode" in result
+    result = await config(action="status")
+    assert "mode" in result
 
-        # Test set action through tool
-        result = await config(action="set", message_limit=42)
-        assert "updated" in result
-    finally:
-        srv._backend = old
+    result = await config(action="set", message_limit=42)
+    assert "updated" in result
 
 
-@pytest.mark.asyncio
 async def test_help_tool():
     from telegram.server import help
 
@@ -343,48 +226,42 @@ async def test_help_tool():
     assert "Telegram Messages" in result
 
 
-@pytest.mark.asyncio
-async def test_lifespan_bot_mode(mock_backend):
-    import telegram.server as srv
+# --- lifespan ---
+
+
+def _fake_module(name: str, obj: object) -> object:
+    return type("module", (), {name: obj})()
+
+
+async def test_lifespan_bot_mode(server_state):
     from telegram.server import _lifespan
 
-    with patch.object(srv, "Settings") as mock_settings_cls:
+    mock_bot = AsyncMock()
+    mock_bot.is_authorized = AsyncMock(return_value=True)
+    with (
+        patch.object(server_state, "Settings") as mock_settings_cls,
+        patch.dict(
+            "sys.modules",
+            {
+                "telegram.backends.bot_backend": _fake_module(
+                    "BotBackend", MagicMock(return_value=mock_bot)
+                )
+            },
+        ),
+    ):
         mock_settings = mock_settings_cls.return_value
         mock_settings.is_configured = True
         mock_settings.mode = "bot"
         mock_settings.bot_token = "fake:token"
 
-        with patch(
-            "telegram.server.BotBackend",
-            create=True,
-        ) as MockBot:
-            mock_bot = AsyncMock()
-            mock_bot.is_authorized = AsyncMock(return_value=True)
-            MockBot.return_value = mock_bot
+        async with _lifespan(mcp):
+            assert server_state._backend is mock_bot
+            mock_bot.connect.assert_awaited_once()
 
-            with patch(
-                "telegram.backends.bot_backend.BotBackend",
-                MockBot,
-            ):
-                # Patch the import inside lifespan
-                with patch.dict(
-                    "sys.modules",
-                    {
-                        "telegram.backends.bot_backend": type(
-                            "module", (), {"BotBackend": MockBot}
-                        )()
-                    },
-                ):
-                    async with _lifespan(mcp):
-                        assert srv._backend is mock_bot
-                        mock_bot.connect.assert_awaited_once()
-
-                    mock_bot.disconnect.assert_awaited_once()
+        mock_bot.disconnect.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_lifespan_user_mode():
-    import telegram.server as srv
+async def test_lifespan_user_mode(server_state):
     from telegram.server import _lifespan
 
     mock_settings = MagicMock()
@@ -398,594 +275,160 @@ async def test_lifespan_user_mode():
     mock_user_backend.is_authorized = AsyncMock(return_value=True)
 
     with (
-        patch.object(srv, "Settings", return_value=mock_settings),
+        patch.object(server_state, "Settings", return_value=mock_settings),
         patch.dict(
             "sys.modules",
             {
-                "telegram.backends.user_backend": type(
-                    "module",
-                    (),
-                    {"UserBackend": MagicMock(return_value=mock_user_backend)},
-                )()
+                "telegram.backends.user_backend": _fake_module(
+                    "UserBackend", MagicMock(return_value=mock_user_backend)
+                )
             },
         ),
     ):
         async with _lifespan(mcp):
-            assert srv._backend is mock_user_backend
+            assert server_state._backend is mock_user_backend
+            assert server_state._pending_auth is False
             mock_user_backend.connect.assert_awaited_once()
 
         mock_user_backend.disconnect.assert_awaited_once()
 
 
-# --- pending_auth behavior tests ---
+async def test_lifespan_user_mode_unauthorized(server_state):
+    """An unauthorized user session sets pending_auth (no in-process auth flow)."""
+    from telegram.server import _lifespan
 
+    mock_settings = MagicMock()
+    mock_settings.is_configured = True
+    mock_settings.mode = "user"
+    mock_settings.api_id = 12345
+    mock_settings.api_hash = "testhash"
+    mock_settings.phone = None
 
-@pytest.mark.asyncio
-async def test_message_blocked_during_pending_auth(mock_backend):
-    import telegram.server as srv
-    from telegram.server import message
-
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = True
-        result = payload(await message(action="send", chat_id=123, text="hi"))
-        assert "error" in result
-        assert "not authenticated" in result["error"].lower()
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
-
-
-@pytest.mark.asyncio
-async def test_chat_blocked_during_pending_auth(mock_backend):
-    import telegram.server as srv
-    from telegram.server import chat
-
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = True
-        result = payload(await chat(action="list"))
-        assert "error" in result
-        assert "not authenticated" in result["error"].lower()
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
-
-
-@pytest.mark.asyncio
-async def test_media_blocked_during_pending_auth(mock_backend):
-    import telegram.server as srv
-    from telegram.server import media
-
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = True
-        result = payload(
-            await media(
-                action="send_photo",
-                chat_id=123,
-                file_path_or_url="https://example.com/photo.jpg",
-            )
-        )
-        assert "error" in result
-        assert "not authenticated" in result["error"].lower()
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
-
-
-@pytest.mark.asyncio
-async def test_contact_blocked_during_pending_auth(mock_backend):
-    import telegram.server as srv
-    from telegram.server import contact
-
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = True
-        result = payload(await contact(action="list"))
-        assert "error" in result
-        assert "not authenticated" in result["error"].lower()
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
-
-
-@pytest.mark.asyncio
-async def test_config_works_during_pending_auth(mock_backend):
-    """Config tool should always work even during pending auth."""
-    import telegram.server as srv
-    from telegram.server import config
-
-    old_backend = srv._backend
-    old_pending = srv._pending_auth
-    try:
-        srv._backend = mock_backend
-        srv._pending_auth = True
-        result = await config(action="status")
-        assert "mode" in result
-        assert result["pending_auth"] is True
-    finally:
-        srv._backend = old_backend
-        srv._pending_auth = old_pending
-
-
-@pytest.mark.asyncio
-async def test_help_works_during_pending_auth():
-    """Help tool should always work even during pending auth."""
-    from telegram.server import help
-
-    result = await help(topic="messages")
-    assert "Telegram Messages" in result
-
-
-def test_main_calls_run():
-    """main() in stdio mode (default) runs FastMCP stdio server directly (no bridge).
-
-    Per spec 2026-05-01-stdio-pure-http-multiuser.md, stdio is now the default
-    transport. TELEGRAM_BOT_TOKEN must be set for stdio (bot mode only).
-    """
-    import telegram.server as srv
+    mock_user_backend = AsyncMock()
+    mock_user_backend.is_authorized = AsyncMock(return_value=False)
 
     with (
-        patch.object(srv.mcp, "run") as mock_run,
-        patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "fake:token"}, clear=True),
-    ):
-        main()
-    mock_run.assert_called_once_with(transport="stdio")
-
-
-def test_main_stdio_missing_credentials_exits_1(capsys):
-    """Stdio mode with no credentials (env/config/session) exits 1 with a login hint.
-
-    The gate now consults ``resolve_credential_state`` instead of hard-requiring
-    the ``TELEGRAM_BOT_TOKEN`` env var, so the config/session sources are mocked
-    empty here to pin the truly-unconfigured branch (was
-    ``test_main_stdio_missing_bot_token_exits_1``; message/behaviour changed on
-    purpose in S6/WS-B3).
-    """
-    with (
-        patch.dict(os.environ, {}, clear=True),
-        patch(
-            "telegram.credential_state._read_single_user_config",
-            return_value=None,
+        patch.object(server_state, "Settings", return_value=mock_settings),
+        patch.dict(
+            "sys.modules",
+            {
+                "telegram.backends.user_backend": _fake_module(
+                    "UserBackend", MagicMock(return_value=mock_user_backend)
+                )
+            },
         ),
-        patch(
-            "telegram.credential_state.check_saved_sessions",
-            return_value=False,
-        ),
-        pytest.raises(SystemExit) as exc_info,
     ):
-        main()
-    assert exc_info.value.code == 1
-    captured = capsys.readouterr()
-    assert "stdio mode" in captured.err
-    assert "login" in captured.err
-    assert "TELEGRAM_BOT_TOKEN" in captured.err
+        async with _lifespan(mcp):
+            assert server_state._pending_auth is True
+
+        mock_user_backend.disconnect.assert_awaited_once()
 
 
-def test_main_stdio_config_bot_token_no_env_runs():
-    """Stdio: a bot token in the single-user config (not env) resolves CONFIGURED.
-
-    resolve_credential_state reports CONFIGURED from the saved config so the
-    server starts -- no exit, even though TELEGRAM_BOT_TOKEN is unset in env.
-    """
-    import telegram.server as srv
-
-    with (
-        patch.dict(os.environ, {}, clear=True),
-        patch(
-            "telegram.credential_state._read_single_user_config",
-            return_value={"TELEGRAM_BOT_TOKEN": "123:ABC"},
-        ),
-        patch.object(srv.mcp, "run") as mock_run,
-    ):
-        main()
-    mock_run.assert_called_once_with(transport="stdio")
-
-
-def test_main_stdio_phone_session_runs():
-    """Stdio: a phone in the single-user config (user mode + session) is CONFIGURED."""
-    import telegram.server as srv
-
-    with (
-        patch.dict(os.environ, {}, clear=True),
-        patch(
-            "telegram.credential_state._read_single_user_config",
-            return_value={"TELEGRAM_PHONE": "+84900000000"},
-        ),
-        patch.object(srv.mcp, "run") as mock_run,
-    ):
-        main()
-    mock_run.assert_called_once_with(transport="stdio")
-
-
-# --- unconfigured state tests (no credentials) ---
-
-
-@pytest.mark.asyncio
-async def test_tools_list_works_without_credentials():
-    """tools/list should work even with no Telegram credentials."""
-    tools = mcp._tool_manager._tools
-    assert len(tools) == 7
-    expected = {
-        "message",
-        "chat",
-        "media",
-        "contact",
-        "config",
-        "help",
-        "config__open_relay",
-    }
-    assert set(tools.keys()) == expected
-
-
-@pytest.mark.asyncio
-async def test_help_works_without_credentials():
-    """help tool works without any credentials."""
-    from telegram.server import help
-
-    result = await help(topic="messages")
-    assert "Telegram Messages" in result
-
-    result_all = await help(topic=None)
-    assert "Telegram" in result_all
-
-
-@pytest.mark.asyncio
-async def test_message_returns_setup_hint_when_unconfigured():
-    """message tool returns actionable setup instructions when unconfigured."""
-    import telegram.server as srv
-    from telegram.server import message
-
-    old_unconfigured = srv._unconfigured
-    old_pending = srv._pending_auth
-    try:
-        srv._unconfigured = True
-        srv._pending_auth = False
-        result = payload(await message(action="send", chat_id=123, text="hi"))
-        assert "error" in result
-        assert result["error"] == "Not configured"
-        assert "setup" in result
-        assert "bot_mode" in result["setup"]
-        assert "TELEGRAM_BOT_TOKEN" in result["setup"]["bot_mode"]["env_var"]
-        assert "user_mode" in result["setup"]
-    finally:
-        srv._unconfigured = old_unconfigured
-        srv._pending_auth = old_pending
-
-
-@pytest.mark.asyncio
-async def test_chat_returns_setup_hint_when_unconfigured():
-    """chat tool returns setup instructions when unconfigured."""
-    import telegram.server as srv
-    from telegram.server import chat
-
-    old = srv._unconfigured
-    try:
-        srv._unconfigured = True
-        result = payload(await chat(action="list"))
-        assert result["error"] == "Not configured"
-        assert "setup" in result
-    finally:
-        srv._unconfigured = old
-
-
-@pytest.mark.asyncio
-async def test_not_ready_response_unconfigured():
-    import telegram.server as server
-
-    old = server._unconfigured
-    try:
-        server._unconfigured = True
-        data = server._not_ready_response()
-        assert data["error"] == "Not configured"
-        assert "bot_mode" in data["setup"]
-        assert "user_mode" in data["setup"]
-    finally:
-        server._unconfigured = old
-
-
-@pytest.mark.asyncio
-async def test_not_ready_response_pending_auth():
-    import telegram.server as server
-
-    old_unconfigured = server._unconfigured
-    old_pending = server._pending_auth
-    try:
-        server._unconfigured = False
-        server._pending_auth = True
-        data = server._not_ready_response()
-        assert "error" in data
-        assert "not authenticated" in data["error"].lower()
-    finally:
-        server._unconfigured = old_unconfigured
-        server._pending_auth = old_pending
-
-
-@pytest.mark.asyncio
-async def test_media_returns_setup_hint_when_unconfigured():
-    """media tool returns setup instructions when unconfigured."""
-    import telegram.server as srv
-    from telegram.server import media
-
-    old = srv._unconfigured
-    try:
-        srv._unconfigured = True
-        result = payload(
-            await media(
-                action="send_photo",
-                chat_id=123,
-                file_path_or_url="https://example.com/photo.jpg",
-            )
-        )
-        assert result["error"] == "Not configured"
-        assert "setup" in result
-    finally:
-        srv._unconfigured = old
-
-
-@pytest.mark.asyncio
-async def test_contact_returns_setup_hint_when_unconfigured():
-    """contact tool returns setup instructions when unconfigured."""
-    import telegram.server as srv
-    from telegram.server import contact
-
-    old = srv._unconfigured
-    try:
-        srv._unconfigured = True
-        result = payload(await contact(action="list"))
-        assert result["error"] == "Not configured"
-        assert "setup" in result
-    finally:
-        srv._unconfigured = old
-
-
-@pytest.mark.asyncio
-async def test_config_status_works_when_unconfigured():
-    """config status shows setup instructions when unconfigured."""
-    import telegram.server as srv
-    from telegram.server import config
-
-    old = srv._unconfigured
-    try:
-        srv._unconfigured = True
-        result = await config(action="status")
-        assert result["configured"] is False
-        assert result["connected"] is False
-        assert "setup" in result
-    finally:
-        srv._unconfigured = old
-
-
-@pytest.mark.asyncio
-async def test_config_set_blocked_when_unconfigured():
-    """config set returns setup instructions when unconfigured."""
-    import telegram.server as srv
-    from telegram.server import config
-
-    old = srv._unconfigured
-    try:
-        srv._unconfigured = True
-        result = await config(action="set", message_limit=42)
-        assert result["error"] == "Not configured"
-    finally:
-        srv._unconfigured = old
-
-
-@pytest.mark.asyncio
-async def test_lifespan_unconfigured_mode():
-    """Lifespan should start successfully without credentials."""
-    import telegram.server as srv
+async def test_lifespan_unconfigured_mode(server_state):
+    """Lifespan starts without credentials and resets the flag on exit."""
     from telegram.credential_state import CredentialState
     from telegram.server import _lifespan
 
-    # Reset _multi_user_mode flag — earlier tests may have called
-    # create_http_mcp_server() which flips it globally.
-    original_multi_user = srv._multi_user_mode
-    srv._multi_user_mode = False
-    try:
-        with (
-            patch.object(srv, "Settings") as mock_settings_cls,
-            patch(
-                "telegram.credential_state.resolve_credential_state",
-                return_value=CredentialState.AWAITING_SETUP,
-            ),
-        ):
-            mock_settings = mock_settings_cls.return_value
-            mock_settings.is_configured = False
-
-            async with _lifespan(mcp):
-                assert srv._unconfigured is True
-
-            assert srv._unconfigured is False
-    finally:
-        srv._multi_user_mode = original_multi_user
-
-
-# --- setup_* config actions (credential state integration) ---
-
-
-@pytest.mark.asyncio
-async def test_config_setup_status():
-    """setup_status returns credential state info."""
-    import telegram.server as srv
-    from telegram.server import config
-
-    old_unconfigured = srv._unconfigured
-    old_pending = srv._pending_auth
-    try:
-        srv._unconfigured = False
-        srv._pending_auth = False
-
-        with (
-            patch(
-                "telegram.credential_state.get_state",
-                return_value=MagicMock(value="configured"),
-            ),
-            patch(
-                "telegram.credential_state.get_setup_url",
-                return_value=None,
-            ),
-        ):
-            result = await config(action="setup_status")
-            assert result["state"] == "configured"
-            assert "setup_url" in result
-            assert "configured" in result
-            assert "pending_auth" in result
-    finally:
-        srv._unconfigured = old_unconfigured
-        srv._pending_auth = old_pending
-
-
-@pytest.mark.asyncio
-async def test_config_setup_start_already_configured():
-    """setup_start returns already_configured if state is CONFIGURED without force."""
-    from telegram.credential_state import CredentialState
-    from telegram.server import config
-
-    with patch(
-        "telegram.credential_state.get_state",
-        return_value=CredentialState.CONFIGURED,
+    with (
+        patch.object(server_state, "Settings") as mock_settings_cls,
+        patch(
+            "telegram.credential_state.resolve_credential_state",
+            return_value=CredentialState.AWAITING_SETUP,
+        ),
     ):
-        result = await config(action="setup_start")
-        assert result["status"] == "already_configured"
-        assert "force" in result["message"].lower()
+        mock_settings_cls.return_value.is_configured = False
+
+        async with _lifespan(mcp):
+            assert server_state._unconfigured is True
+
+        assert server_state._unconfigured is False
 
 
-@pytest.mark.asyncio
-async def test_config_setup_start_force_returns_stdio_unsupported():
-    """setup_start with key='force' returns stdio_unsupported.
-
-    Per spec 2026-05-01-stdio-pure-http-multiuser.md, stdio mode does not
-    spawn an in-process credential form. The tool now points users at HTTP
-    mode (or env var) for setup.
-    """
+async def test_lifespan_shuts_down_namespace_backends(server_state):
+    """Leaving the lifespan disconnects every per-namespace backend."""
+    from telegram.auth.telegram_auth_provider import (
+        TelegramAuthProvider,
+        set_global_provider,
+    )
     from telegram.credential_state import CredentialState
-    from telegram.server import config
+    from telegram.server import _lifespan
 
-    with patch(
-        "telegram.credential_state.get_state",
-        return_value=CredentialState.CONFIGURED,
-    ):
-        result = await config(action="setup_start", key="force")
-        assert result["status"] == "stdio_unsupported"
-        assert "TELEGRAM_BOT_TOKEN" in result["message"]
-
-
-@pytest.mark.asyncio
-async def test_config_setup_start_awaiting_returns_stdio_unsupported():
-    """setup_start when awaiting returns stdio_unsupported with switch hint."""
-    from telegram.credential_state import CredentialState
-    from telegram.server import config
-
-    with patch(
-        "telegram.credential_state.get_state",
-        return_value=CredentialState.AWAITING_SETUP,
-    ):
-        result = await config(action="setup_start")
-        assert result["status"] == "stdio_unsupported"
-        assert "HTTP mode" in result["message"]
-
-
-@pytest.mark.asyncio
-async def test_config_setup_reset():
-    """setup_reset clears credentials."""
-    from telegram.server import config
-
-    with patch("telegram.credential_state.reset_state") as mock_reset:
-        result = await config(action="setup_reset")
-        assert result["status"] == "ok"
-        assert "cleared" in result["message"].lower()
-        mock_reset.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_config_setup_complete():
-    """setup_complete re-resolves credential state."""
-    from telegram.credential_state import CredentialState
-    from telegram.server import config
+    provider = TelegramAuthProvider()
+    ns_backend = AsyncMock()
+    provider.active_clients["a"] = ns_backend
+    set_global_provider(provider)
 
     with (
+        patch.object(server_state, "Settings") as mock_settings_cls,
+        patch(
+            "telegram.credential_state.resolve_credential_state",
+            return_value=CredentialState.AWAITING_SETUP,
+        ),
+    ):
+        mock_settings_cls.return_value.is_configured = False
+        async with _lifespan(mcp):
+            pass
+
+    ns_backend.disconnect.assert_awaited_once()
+    assert provider.active_clients == {}
+
+
+async def test_lifespan_resolves_saved_credentials(server_state):
+    """Lifespan loads the saved config via Settings.from_saved_config."""
+    from telegram.credential_state import CredentialState
+    from telegram.server import _lifespan
+
+    initial = MagicMock()
+    initial.is_configured = False
+    reconfigured = MagicMock()
+    reconfigured.is_configured = True
+    reconfigured.mode = "bot"
+    reconfigured.bot_token = "resolved:token"
+
+    mock_bot = AsyncMock()
+    mock_bot.is_authorized = AsyncMock(return_value=True)
+
+    with (
+        patch.object(server_state, "Settings") as mock_settings_cls,
         patch(
             "telegram.credential_state.resolve_credential_state",
             return_value=CredentialState.CONFIGURED,
         ),
         patch(
-            "telegram.credential_state.get_state",
-            return_value=CredentialState.CONFIGURED,
+            "telegram.credential_state._read_single_user_config",
+            return_value={"TELEGRAM_BOT_TOKEN": "resolved:token"},
+        ),
+        patch.dict(
+            "sys.modules",
+            {
+                "telegram.backends.bot_backend": _fake_module(
+                    "BotBackend", MagicMock(return_value=mock_bot)
+                )
+            },
         ),
     ):
-        result = await config(action="setup_complete")
-        assert result["status"] == "ok"
-        assert result["state"] == "configured"
+        mock_settings_cls.return_value = initial
+        mock_settings_cls.from_saved_config.return_value = reconfigured
 
+        async with _lifespan(mcp):
+            assert server_state._settings is reconfigured
+            mock_settings_cls.from_saved_config.assert_called_once_with(
+                {"TELEGRAM_BOT_TOKEN": "resolved:token"}
+            )
+            mock_bot.connect.assert_awaited_once()
 
-@pytest.mark.asyncio
-async def test_config_setup_status_works_when_unconfigured():
-    """setup_status works even when server is unconfigured."""
-    import telegram.server as srv
-    from telegram.server import config
-
-    old = srv._unconfigured
-    try:
-        srv._unconfigured = True
-        with (
-            patch(
-                "telegram.credential_state.get_state",
-                return_value=MagicMock(value="awaiting_setup"),
-            ),
-            patch(
-                "telegram.credential_state.get_setup_url",
-                return_value=None,
-            ),
-        ):
-            result = await config(action="setup_status")
-            assert result["state"] == "awaiting_setup"
-    finally:
-        srv._unconfigured = old
-
-
-@pytest.mark.asyncio
-async def test_config_setup_reset_works_when_unconfigured():
-    """setup_reset works even when server is unconfigured."""
-    import telegram.server as srv
-    from telegram.server import config
-
-    old = srv._unconfigured
-    try:
-        srv._unconfigured = True
-        with patch("telegram.credential_state.reset_state"):
-            result = await config(action="setup_reset")
-            assert result["status"] == "ok"
-    finally:
-        srv._unconfigured = old
-
-
-# --- _ensure_settings: explicit config load without env injection ---
+        mock_bot.disconnect.assert_awaited_once()
 
 
 def test_ensure_settings_loads_config_without_env_injection():
-    """_ensure_settings loads the saved single-user config via
-    Settings.from_relay_config and must NOT mutate os.environ.
+    """_ensure_settings reads the saved config explicitly; os.environ untouched.
 
     Exporting credentials into the process environment leaks them to every
-    subprocess and third-party dependency, defeating the encrypted store. The
-    saved config must be read explicitly instead.
+    subprocess and third-party dependency.
     """
     import telegram.server as srv
 
     token = "123456:ABCdefGHIjklMNOpqrsTUVwxyz0123456789"
-
-    # Keep only the conftest-isolated home: Settings() resolves the default
-    # data dir from Path.home() at construction time.
     isolated_home = {k: os.environ[k] for k in ("HOME", "USERPROFILE")}
     with (
         patch.dict(os.environ, isolated_home, clear=True),
@@ -998,226 +441,351 @@ def test_ensure_settings_loads_config_without_env_injection():
 
         assert settings.is_configured
         assert settings.bot_token == token
-        # Security: credentials must not leak into the process environment.
         assert "TELEGRAM_BOT_TOKEN" not in os.environ
 
 
-# --- lifespan: resolve_credential_state integration ---
+def test_create_backend_instance_user_mode():
+    from telegram.config import Settings
+    from telegram.server import _create_backend_instance
+
+    settings = Settings(phone="+10000000000")
+    with patch("telegram.backends.user_backend.UserBackend") as mock_user:
+        backend = _create_backend_instance(settings)
+    assert backend is mock_user.return_value
+    mock_user.assert_called_once_with(settings)
 
 
-@pytest.mark.asyncio
-async def test_lifespan_resolves_credentials_when_unconfigured():
-    """Lifespan calls resolve_credential_state and, when configured, loads the
-    saved config via Settings.from_relay_config (not a second bare Settings())."""
+# --- pending_auth ---
+
+
+@pytest.fixture
+def pending_auth(default_backend):
     import telegram.server as srv
-    from telegram.server import _lifespan
 
-    mock_settings_initial = MagicMock()
-    mock_settings_initial.is_configured = False
+    srv._pending_auth = True
+    return default_backend
 
-    mock_settings_reconfigured = MagicMock()
-    mock_settings_reconfigured.is_configured = True
-    mock_settings_reconfigured.mode = "bot"
-    mock_settings_reconfigured.bot_token = "resolved:token"
 
-    mock_bot = AsyncMock()
-    mock_bot.is_authorized = AsyncMock(return_value=True)
+async def test_message_blocked_during_pending_auth(pending_auth):
+    from telegram.server import message
 
-    from telegram.credential_state import CredentialState
+    result = payload(await message(action="send", chat_id=123, text="hi"))
+    assert "not authenticated" in result["error"].lower()
+    assert "telegram auth --phone" in result["error"]
+
+
+async def test_chat_blocked_during_pending_auth(pending_auth):
+    from telegram.server import chat
+
+    result = payload(await chat(action="list"))
+    assert "not authenticated" in result["error"].lower()
+
+
+async def test_media_blocked_during_pending_auth(pending_auth):
+    from telegram.server import media
+
+    result = payload(
+        await media(
+            action="send_photo",
+            chat_id=123,
+            file_path_or_url="https://example.com/photo.jpg",
+        )
+    )
+    assert "not authenticated" in result["error"].lower()
+
+
+async def test_contact_blocked_during_pending_auth(pending_auth):
+    from telegram.server import contact
+
+    result = payload(await contact(action="list"))
+    assert "not authenticated" in result["error"].lower()
+
+
+async def test_config_works_during_pending_auth(pending_auth):
+    """Config status always works, even during pending auth."""
+    from telegram.server import config
+
+    result = await config(action="status")
+    assert "mode" in result
+    assert result["pending_auth"] is True
+
+
+async def test_help_works_during_pending_auth(pending_auth):
+    from telegram.server import help
+
+    result = await help(topic="messages")
+    assert "Telegram Messages" in result
+
+
+# --- unconfigured ---
+
+
+@pytest.fixture
+def unconfigured(server_state):
+    server_state._unconfigured = True
+    server_state._pending_auth = False
+    return server_state
+
+
+async def test_help_works_without_credentials():
+    from telegram.server import help
+
+    assert "Telegram Messages" in await help(topic="messages")
+    assert "Telegram" in await help(topic=None)
+
+
+async def test_message_returns_setup_hint_when_unconfigured(unconfigured):
+    from telegram.server import message
+
+    result = payload(await message(action="send", chat_id=123, text="hi"))
+    assert result["error"] == "Not configured"
+    setup = result["setup"]
+    assert setup["bot_mode"]["env_var"] == "TELEGRAM_BOT_TOKEN"
+    assert setup["bot_mode"]["command"] == "telegram auth --bot-token <token>"
+    assert setup["user_mode"]["command"] == "telegram auth --phone <+number>"
+    assert setup["user_mode"]["env_vars"] == ["TELEGRAM_PHONE"]
+
+
+async def test_chat_returns_setup_hint_when_unconfigured(unconfigured):
+    from telegram.server import chat
+
+    result = payload(await chat(action="list"))
+    assert result["error"] == "Not configured"
+    assert "setup" in result
+
+
+async def test_media_returns_setup_hint_when_unconfigured(unconfigured):
+    from telegram.server import media
+
+    result = payload(
+        await media(
+            action="send_photo",
+            chat_id=123,
+            file_path_or_url="https://example.com/photo.jpg",
+        )
+    )
+    assert result["error"] == "Not configured"
+
+
+async def test_contact_returns_setup_hint_when_unconfigured(unconfigured):
+    from telegram.server import contact
+
+    result = payload(await contact(action="list"))
+    assert result["error"] == "Not configured"
+
+
+def test_not_ready_response_unconfigured(unconfigured):
+    data = unconfigured._not_ready_response()
+    assert data["error"] == "Not configured"
+    assert "bot_mode" in data["setup"]
+    assert "user_mode" in data["setup"]
+
+
+def test_not_ready_response_pending_auth(server_state):
+    server_state._unconfigured = False
+    server_state._pending_auth = True
+    data = server_state._not_ready_response()
+    assert "not authenticated" in data["error"].lower()
+
+
+async def test_config_status_works_when_unconfigured(unconfigured):
+    from telegram.server import config
+
+    result = await config(action="status")
+    assert result["configured"] is False
+    assert result["connected"] is False
+    assert "telegram auth --bot-token" in result["setup"]["bot_mode"]
+    assert "relay" not in str(result).lower()
+
+
+async def test_config_set_blocked_when_unconfigured(unconfigured):
+    from telegram.server import config
+
+    result = await config(action="set", message_limit=42)
+    assert result["error"] == "Not configured"
+
+
+async def test_config_unknown_setup_action_is_not_special(default_backend):
+    """The relay-era setup_* actions are gone; they are plain unknown actions."""
+    from telegram.server import config
+
+    result = await config(action="setup_start")
+    assert "error" in result
+
+
+# --- non-default namespaces (hull multi mode) ---
+
+
+def test_get_backend_namespace_without_backend():
+    with (
+        as_namespace("a"),
+        pytest.raises(RuntimeError, match="No connected Telegram backend"),
+    ):
+        get_backend()
+
+
+def test_get_backend_namespace_uses_provider():
+    from telegram.auth.telegram_auth_provider import get_provider
+
+    backend = MagicMock()
+    get_provider().active_clients["a"] = backend
+    with as_namespace("a"):
+        assert get_backend() is backend
+
+
+async def test_tool_in_unconfigured_namespace_returns_namespaced_hint():
+    from telegram.server import message
+
+    with as_namespace("a"):
+        result = payload(await message(action="send", chat_id=1, text="hi"))
+    assert result["error"] == "Not configured"
+    assert result["setup"]["bot_mode"]["command"] == (
+        "telegram auth --bot-token <token> --user a"
+    )
+    # Env vars only configure the default namespace.
+    assert "env_var" not in result["setup"]["bot_mode"]
+
+
+async def test_tool_in_unauthorized_namespace_returns_auth_hint():
+    """Saved phone but no authorized session: point at `auth --user`."""
+    from telegram.server import chat
 
     with (
-        patch.object(srv, "Settings") as mock_settings_cls,
         patch(
-            "telegram.credential_state.resolve_credential_state",
-            return_value=CredentialState.CONFIGURED,
+            "telegram.auth.telegram_auth_provider.settings_for_namespace",
+            return_value=MagicMock(),
         ),
+        patch(
+            "telegram.auth.telegram_auth_provider.TelegramAuthProvider.get",
+            new=AsyncMock(return_value=None),
+        ),
+        as_namespace("b"),
+    ):
+        result = payload(await chat(action="list"))
+    assert "--user b" in result["error"]
+
+
+async def test_config_status_in_unconfigured_namespace():
+    from telegram.server import config
+
+    with as_namespace("a"):
+        result = await config(action="status")
+    assert result["configured"] is False
+    assert "--user a" in result["setup"]["bot_mode"]
+
+
+async def test_config_in_ready_namespace_uses_namespace_backend(mock_backend):
+    from telegram.server import config
+
+    with (
+        patch(
+            "telegram.auth.telegram_auth_provider.TelegramAuthProvider.get",
+            new=AsyncMock(return_value=mock_backend),
+        ),
+        as_namespace("a"),
+    ):
+        result = await config(action="status")
+    assert "mode" in result
+
+
+# --- main() ---
+
+
+def test_main_stdio_runs_when_configured():
+    import telegram.server as srv
+
+    with (
+        patch.object(srv.mcp, "run") as mock_run,
+        patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "fake:token"}),
+    ):
+        assert main([]) == 0
+    mock_run.assert_called_once_with(transport="stdio", show_banner=False)
+
+
+def test_main_reads_sys_argv_when_argv_is_none():
+    import telegram.server as srv
+
+    with (
+        patch.object(srv.mcp, "run") as mock_run,
+        patch.object(srv, "_parse_serve_args", wraps=srv._parse_serve_args) as parse,
+        patch("sys.argv", ["telegram"]),
+        patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "fake:token"}),
+    ):
+        assert main() == 0
+    parse.assert_called_once_with([])
+    mock_run.assert_called_once()
+
+
+def test_main_stdio_missing_credentials_exits_1(capsys):
+    """Stdio with no credentials returns 1 with a CLI login hint."""
+    with (
         patch(
             "telegram.credential_state._read_single_user_config",
-            return_value={"TELEGRAM_BOT_TOKEN": "resolved:token"},
+            return_value=None,
         ),
-        patch.dict(
-            "sys.modules",
-            {
-                "telegram.backends.bot_backend": type(
-                    "module",
-                    (),
-                    {"BotBackend": MagicMock(return_value=mock_bot)},
-                )()
-            },
+        patch(
+            "telegram.credential_state.check_saved_sessions",
+            return_value=False,
         ),
     ):
-        # Bare Settings() -> unconfigured; explicit from_relay_config -> configured.
-        mock_settings_cls.return_value = mock_settings_initial
-        mock_settings_cls.from_relay_config.return_value = mock_settings_reconfigured
-
-        async with _lifespan(mcp):
-            assert srv._settings is mock_settings_reconfigured
-            mock_settings_cls.from_relay_config.assert_called_once_with(
-                {"TELEGRAM_BOT_TOKEN": "resolved:token"}
-            )
-            mock_bot.connect.assert_awaited_once()
-
-        mock_bot.disconnect.assert_awaited_once()
+        assert main([]) == 1
+    err_out = capsys.readouterr().err
+    assert "stdio mode" in err_out
+    assert "telegram auth --bot-token" in err_out
+    assert "TELEGRAM_BOT_TOKEN" in err_out
+    assert "https://github.com/n24q02m/telegram#setup" in err_out
+    # No local setup endpoint: the hint never points at a browser form.
+    for needle in ("localhost", "127.0.0.1", "--http", "/authorize"):
+        assert needle not in err_out
 
 
-@pytest.mark.asyncio
-async def test_lifespan_multi_user_mode_unconfigured():
-    """Multi-user mode starts without global backend when unconfigured."""
-    import telegram.server as srv
-    from telegram.server import _lifespan
-
-    old_multi = srv._multi_user_mode
-    try:
-        srv._multi_user_mode = True
-
-        mock_settings = MagicMock()
-        mock_settings.is_configured = False
-
-        with (
-            patch.object(srv, "Settings", return_value=mock_settings),
-            patch(
-                "telegram.credential_state.resolve_credential_state",
-                return_value=MagicMock(value="awaiting_setup"),
-            ),
-        ):
-            async with _lifespan(mcp):
-                # In multi-user mode, unconfigured is OK
-                assert srv._unconfigured is not True
-    finally:
-        srv._multi_user_mode = old_multi
-
-
-# --- get_backend multi-user mode ---
-
-
-def test_get_backend_multi_user_mode():
-    """get_backend returns per-user backend in multi-user mode."""
+def test_main_stdio_config_bot_token_no_env_runs():
+    """A bot token in the saved config (not env) resolves CONFIGURED."""
     import telegram.server as srv
 
-    old_multi = srv._multi_user_mode
-    old_backend = srv._backend
-    try:
-        srv._multi_user_mode = True
-        mock_per_user = MagicMock()
-
-        with patch(
-            "telegram.transports.http.get_current_backend",
-            return_value=mock_per_user,
-        ):
-            result = get_backend()
-            assert result is mock_per_user
-    finally:
-        srv._multi_user_mode = old_multi
-        srv._backend = old_backend
-
-
-def test_get_backend_multi_user_mode_fallback():
-    """get_backend falls back to global backend when ContextVar is None."""
-    import telegram.server as srv
-
-    old_multi = srv._multi_user_mode
-    old_backend = srv._backend
-    old_get_current = srv._get_current_backend
-    try:
-        srv._multi_user_mode = True
-        srv._backend = MagicMock()
-        srv._get_current_backend = MagicMock(return_value=None)
-
-        result = get_backend()
-        assert result is srv._backend
-    finally:
-        srv._multi_user_mode = old_multi
-        srv._backend = old_backend
-        srv._get_current_backend = old_get_current
-
-
-# --- main() HTTP transport ---
-
-
-def test_main_http_transport():
-    """main() dispatches HTTP (opt-in via MCP_TRANSPORT=http) through
-    transports.http.start_http so the multi-user OAuth branch + refuse-guard
-    + single-user fallback all live behind one entry point.
-
-    Per spec 2026-05-01-stdio-pure-http-multiuser.md, HTTP is now opt-in via
-    --http or MCP_TRANSPORT=http or TRANSPORT_MODE=http (was the default).
-    """
-    # Keep the conftest-isolated home (Settings() resolves the data dir from it).
-    isolated_home = {k: os.environ[k] for k in ("HOME", "USERPROFILE")}
     with (
-        patch("telegram.transports.http.start_http") as mock_start_http,
-        patch.dict(os.environ, {"MCP_TRANSPORT": "http", **isolated_home}, clear=True),
+        patch(
+            "telegram.credential_state._read_single_user_config",
+            return_value={"TELEGRAM_BOT_TOKEN": "123:ABC"},
+        ),
+        patch.object(srv.mcp, "run") as mock_run,
     ):
-        main()
-        mock_start_http.assert_called_once()
+        assert main([]) == 0
+    mock_run.assert_called_once_with(transport="stdio", show_banner=False)
 
 
-# --- lifespan: user mode unauthorized, no phone, no relay ---
-
-
-@pytest.mark.asyncio
-async def test_lifespan_user_mode_unauthorized_no_phone():
-    """Lifespan sets pending_auth when session unauthorized and phone is not set."""
-    import telegram.server as srv
-    from telegram.server import _lifespan
-
-    mock_settings = MagicMock()
-    mock_settings.is_configured = True
-    mock_settings.mode = "user"
-    mock_settings.api_id = 12345
-    mock_settings.api_hash = "testhash"
-    mock_settings.phone = None  # No phone set
-
-    mock_user_backend = AsyncMock()
-    mock_user_backend.is_authorized = AsyncMock(return_value=False)
-
-    old_pending = srv._pending_auth
-    try:
-        with (
-            patch.object(srv, "Settings", return_value=mock_settings),
-            patch.dict(
-                "sys.modules",
-                {
-                    "telegram.backends.user_backend": type(
-                        "module",
-                        (),
-                        {"UserBackend": MagicMock(return_value=mock_user_backend)},
-                    )()
-                },
-            ),
-        ):
-            async with _lifespan(mcp):
-                assert srv._pending_auth is True
-                # pending_auth set without auth flow
-
-            mock_user_backend.disconnect.assert_awaited_once()
-    finally:
-        srv._pending_auth = old_pending
-
-
-def test_create_http_mcp_server():
-    """create_http_mcp_server sets _multi_user_mode and returns mcp."""
+def test_main_stdio_phone_session_runs():
     import telegram.server as srv
 
-    old_multi = srv._multi_user_mode
-    try:
-        srv._multi_user_mode = False
-        server = create_http_mcp_server()
-        assert server is mcp
-        assert srv._multi_user_mode is True
-    finally:
-        srv._multi_user_mode = old_multi
+    with (
+        patch(
+            "telegram.credential_state._read_single_user_config",
+            return_value={"TELEGRAM_PHONE": "+84900000000"},
+        ),
+        patch.object(srv.mcp, "run") as mock_run,
+    ):
+        assert main([]) == 0
+    mock_run.assert_called_once_with(transport="stdio", show_banner=False)
 
 
-@pytest.mark.asyncio
-async def test_run_http():
-    """run_http calls run_http_server with correct arguments."""
-    with patch(
-        "mcp_core.transport.local_server.run_http_server", new_callable=AsyncMock
-    ) as mock_run:
-        await run_http(port=8080)
-        mock_run.assert_called_once()
-        args, kwargs = mock_run.call_args
-        assert args[0] is mcp
-        assert kwargs["server_name"] == "better-telegram-mcp"
-        assert kwargs["port"] == 8080
+@pytest.mark.parametrize(
+    ("argv", "env"),
+    [
+        (["--http"], {}),
+        ([], {"MCP_TRANSPORT": "http"}),
+        ([], {"TRANSPORT_MODE": "http"}),
+    ],
+)
+def test_main_http_dispatches_to_start_http(argv, env):
+    with (
+        patch("telegram.transports.http.start_http", return_value=0) as start,
+        patch.dict(os.environ, env),
+    ):
+        assert main(argv) == 0
+    start.assert_called_once_with(host=None, port=None)
+
+
+def test_main_http_passes_host_and_port():
+    with patch("telegram.transports.http.start_http", return_value=2) as start:
+        assert main(["--http", "--host", "127.0.0.1", "--port", "9123"]) == 2
+    start.assert_called_once_with(host="127.0.0.1", port=9123)
