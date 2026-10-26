@@ -13,6 +13,12 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
+# git is needed by uv to fetch the n24q02m-hull git pin (pyproject.toml) until
+# hull is on PyPI; builder stage only, the runtime image copies the venv.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first (cached when deps don't change)
 # Strip [tool.uv.sources] local path overrides so uv resolves from PyPI
 COPY pyproject.toml uv.lock ./
@@ -29,9 +35,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ========================
 # Stage 2: Runtime base (shared by stdio + http targets)
 # ========================
-# Multi-target Dockerfile per spec
-# `~/projects/.superpower/mcp-core/specs/2026-04-30-multi-mode-stdio-http-architecture.md`
-# section D6. Build stdio: `docker buildx build --target stdio -t <repo>:stdio .`
+# Multi-target Dockerfile.
+# Build stdio: `docker buildx build --target stdio -t <repo>:stdio .`
 # Build http:  `docker buildx build --target http  -t <repo>:http .`
 # Build latest (= http): `docker buildx build --target http -t <repo>:latest .`
 FROM python:3.13-slim-bookworm@sha256:ed86c82274b3c69b52fb5820f358f0bd7df0b603332063cb5c6e32bd220c3e6e AS runtime
@@ -49,8 +54,7 @@ COPY --from=builder /app/src /app/src
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH=/app/src \
     PYTHONUNBUFFERED=1 \
-    TELEGRAM_DATA_DIR=/data \
-    HOST=0.0.0.0
+    TELEGRAM_DATA_DIR=/data
 
 # Create non-root user and set permissions
 RUN groupadd -r appuser && useradd -r -g appuser -d /home/appuser -m appuser \
@@ -68,10 +72,12 @@ ENV MCP_TRANSPORT=stdio
 ENTRYPOINT ["python", "-m", "telegram"]
 
 # ========================
-# Stage 3b: http target (multi-user remote daemon)
+# Stage 3b: http target (self-hosted daemon)
 # ========================
+# hull reads server settings from ~/.telegram/config.toml, so the bind address
+# is passed on the command line. Mount /home/appuser/.telegram/config.toml with
+# auth = "token" or "multi": "no-auth" refuses a non-loopback bind (exit 2).
 FROM runtime AS http
-ENV MCP_TRANSPORT=http \
-    MCP_PORT=8080
+ENV MCP_TRANSPORT=http
 EXPOSE 8080
-ENTRYPOINT ["python", "-m", "telegram"]
+ENTRYPOINT ["python", "-m", "telegram", "--http", "--host", "0.0.0.0", "--port", "8080"]

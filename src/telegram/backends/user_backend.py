@@ -25,16 +25,19 @@ from .security import (
 
 
 class UserBackend(TelegramBackend):
-    def __init__(self, settings: Settings, backend=None):
+    def __init__(self, settings: Settings, backend=None, namespace: str = "default"):
         super().__init__("user")
         self._settings = settings
         self._client: TelegramClient | None = None
         self._backend = backend  # None -> on-disk .session file at connect()
+        # hull namespace this backend serves; selects the api-identity marker.
+        self._namespace = namespace
 
     def _session_store(self):
-        from mcp_core.storage.string_session_store import StringSessionStore
+        from hull_core.storage import StringSessionStore
 
-        # The per-sub identity is the settings.session_name (sha256(sub)[:16]).
+        # Only used with an injected credential backend; session_name is the
+        # StringSession's hull sub (one blob per Telethon session).
         return StringSessionStore(
             "telegram", self._settings.session_name, backend=self._backend
         )
@@ -89,13 +92,11 @@ class UserBackend(TelegramBackend):
         session automatically would destroy a working login on a spurious marker
         read.
         """
-        from mcp_core.storage.per_plugin_store import PerPluginStore
+        from ..credential_state import plugin_store
 
         def _sync_warn():
             try:
-                marker = PerPluginStore(
-                    "telegram", sub_key="tokens/app-identity"
-                ).load()
+                marker = plugin_store("tokens/app-identity", self._namespace).load()
             except Exception as e:
                 logger.debug("Could not read api identity marker: {e}", e=e)
                 return
@@ -180,7 +181,7 @@ class UserBackend(TelegramBackend):
             # the local filesystem. The save-on-change sink flushes on
             # every Telethon rewrite (DC migration / key rotation), not just after
             # sign_in -- the fix for the "re-auth a few days later" failure mode.
-            from mcp_core.storage.string_session_store import SaveOnChangeStringSession
+            from hull_core.storage import SaveOnChangeStringSession
 
             store = self._session_store()
             session = SaveOnChangeStringSession(store.load(), sink=store.save)
@@ -196,7 +197,9 @@ class UserBackend(TelegramBackend):
         await self._client.connect()
 
         if not await self._client.is_user_authorized():
-            logger.warning("Session not authorized. Auth required via config tool.")
+            logger.warning(
+                "Session not authorized. Run `telegram auth --phone <+number>` to sign in."
+            )
 
     async def disconnect(self) -> None:
         if self._client is not None:

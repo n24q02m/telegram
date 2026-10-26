@@ -1,11 +1,14 @@
-"""Console-script entry: mounts the shared mcp_core CLI builder.
+"""Console-script entry: the hull consumer CLI builder.
 
-Bare invocation and any leading-dash argv (e.g. --http) start the server
-exactly as before; subcommands run one-shot operator actions. The
-``auth``/``logout`` subcommands (``login`` is a deprecated alias of ``auth``)
-are single-user / local-machine only: they write the on-disk session and the
-encrypted single-user config, so running them makes sense on the machine that
-hosts the stdio server.
+Bare invocation and any leading-dash argv (``--http``, ``--host``, ``--port``)
+start the server; a leading positional argv[0] runs a one-shot operator
+subcommand. hull provides ``config``, ``status``, ``doctor`` and
+``token hash``; this module adds ``auth`` (``login`` is a deprecated alias)
+and replaces ``logout`` so it also revokes and deletes the Telethon session.
+
+``auth`` / ``logout`` act on the machine that hosts the server. ``--user <ns>``
+targets one hull namespace: ``default`` (stdio, ``no-auth`` and ``token`` HTTP
+modes) or the ``namespace`` of a ``users.toml`` user (``multi`` mode).
 """
 
 from __future__ import annotations
@@ -15,17 +18,41 @@ import asyncio
 import getpass
 import sys
 
-from mcp_core import build_cli
+from hull_core.consumer_cli import build_cli
+from hull_core.storage import validate_sub
 
-_MARKER_PLUGIN = "telegram"
-_MARKER_SUB_KEY = "tokens/app-identity"
+from telegram.credential_state import DEFAULT_NAMESPACE, PLUGIN_NAME
+
+_MARKER_LEAF = "tokens/app-identity"
+_SESSION_LEAF = "session"
 
 
 def _serve(argv: list[str]) -> int | None:
     from telegram.server import main as server_main
 
-    server_main()
-    return 0
+    return server_main(argv)
+
+
+def _namespace(value: str) -> str:
+    """argparse type for ``--user``: a safe hull namespace name."""
+    try:
+        return validate_sub(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from None
+
+
+def _add_user_arg(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--user",
+        type=_namespace,
+        default=DEFAULT_NAMESPACE,
+        metavar="NAMESPACE",
+        help=(
+            "hull namespace to act on (default: 'default', used by stdio and "
+            "the no-auth/token HTTP modes; in multi mode use the user's "
+            "users.toml namespace)"
+        ),
+    )
 
 
 # --- auth / login ---
@@ -48,12 +75,12 @@ def _add_credential_args(p: argparse.ArgumentParser) -> None:
 
 def _configure_auth(p: argparse.ArgumentParser) -> None:
     p.description = (
-        "Authenticate this local machine (single-user). Bot mode validates "
-        "the token; phone mode runs the interactive OTP/2FA flow and stores "
-        "the Telethon session on disk."
+        "Authenticate on this machine. Bot mode validates the token; phone "
+        "mode runs the interactive OTP/2FA flow and stores the Telethon "
+        "session on disk."
     )
-    # Optional provider positional for CLI parity with multi-provider servers;
-    # telegram has a single provider.
+    # Optional provider positional kept for CLI compatibility; telegram has a
+    # single provider.
     p.add_argument(
         "provider",
         nargs="?",
@@ -62,17 +89,19 @@ def _configure_auth(p: argparse.ArgumentParser) -> None:
         help="Credential provider to authorize (only 'telegram')",
     )
     _add_credential_args(p)
+    _add_user_arg(p)
 
 
 def _configure_login(p: argparse.ArgumentParser) -> None:
-    p.description = "Deprecated alias of `auth`; authenticate this local machine."
+    p.description = "Deprecated alias of `auth`."
     _add_credential_args(p)
+    _add_user_arg(p)
 
 
 def _handle_auth(args: argparse.Namespace) -> int:
     if args.bot_token:
-        return _login_bot(args.bot_token)
-    return _login_phone(args.phone)
+        return _login_bot(args.bot_token, args.user)
+    return _login_phone(args.phone, args.user)
 
 
 def _handle_login(args: argparse.Namespace) -> int:
@@ -83,19 +112,19 @@ def _handle_login(args: argparse.Namespace) -> int:
     return _handle_auth(args)
 
 
-def _login_bot(bot_token: str) -> int:
+def _login_bot(bot_token: str, namespace: str = DEFAULT_NAMESPACE) -> int:
     try:
         asyncio.run(_verify_bot_token(bot_token))
     except Exception as e:
-        from telegram.relay_setup import _sanitize_error
+        from telegram.errors import _sanitize_error
 
         print(f"Login failed: {_sanitize_error(str(e))}", file=sys.stderr)
         return 1
 
     from telegram.credential_state import _write_single_user_config
 
-    _write_single_user_config({"TELEGRAM_BOT_TOKEN": bot_token})
-    print("Logged in (bot mode). Credentials saved to the local config.")
+    _write_single_user_config({"TELEGRAM_BOT_TOKEN": bot_token}, namespace)
+    print(f"Logged in (bot mode, namespace {namespace}). Credentials saved locally.")
     return 0
 
 
@@ -109,35 +138,49 @@ async def _verify_bot_token(bot_token: str) -> None:
         await backend.disconnect()
 
 
-def _login_phone(phone: str) -> int:
+def _login_phone(phone: str, namespace: str = DEFAULT_NAMESPACE) -> int:
     if not sys.stdin.isatty():
         print(
-            "login --phone requires an interactive terminal "
+            "auth --phone requires an interactive terminal "
             "(the OTP code is prompted on stdin).",
             file=sys.stderr,
         )
         return 1
 
     try:
-        result = asyncio.run(_run_phone_login(phone))
+        result = asyncio.run(_run_phone_login(phone, namespace))
     except Exception as e:
-        from telegram.relay_setup import _sanitize_error
+        from telegram.errors import _sanitize_error
 
         print(f"Login failed: {_sanitize_error(str(e))}", file=sys.stderr)
         return 1
 
     who = result.get("authenticated_as") or "user"
-    print(f"Logged in as {who} (user mode). Session saved locally.")
+    print(
+        f"Logged in as {who} (user mode, namespace {namespace}). Session saved locally."
+    )
     return 0
 
 
-async def _run_phone_login(phone: str) -> dict:
-    from telegram.backends.user_backend import UserBackend
+def _settings_for(namespace: str, config: dict[str, str] | None = None):
+    """Settings whose ``data_dir`` holds the Telethon session of ``namespace``."""
     from telegram.config import Settings
-    from telegram.relay_setup import _needs_2fa_password
 
-    settings = Settings.from_relay_config({"TELEGRAM_PHONE": phone})
-    backend = UserBackend(settings)
+    if namespace == DEFAULT_NAMESPACE:
+        return Settings.from_saved_config(config) if config else Settings()
+    from telegram.auth.telegram_auth_provider import namespace_data_dir
+
+    return Settings.from_saved_config(
+        config or {}, data_dir=namespace_data_dir(namespace)
+    )
+
+
+async def _run_phone_login(phone: str, namespace: str = DEFAULT_NAMESPACE) -> dict:
+    from telegram.backends.user_backend import UserBackend
+    from telegram.errors import _needs_2fa_password
+
+    settings = _settings_for(namespace, {"TELEGRAM_PHONE": phone})
+    backend = UserBackend(settings, namespace=namespace)
     await backend.connect()
     try:
         await backend.send_code(phone)
@@ -149,7 +192,7 @@ async def _run_phone_login(phone: str) -> dict:
                 raise
             password = _prompt_2fa_password()
             result = await backend.sign_in(phone, code, password=password)
-        _persist_phone_identity(settings, phone)
+        _persist_phone_identity(settings, phone, namespace)
         return result
     finally:
         await backend.disconnect()
@@ -169,29 +212,64 @@ def _prompt_2fa_password() -> str:
     return getpass.getpass("Enter your 2FA password: ", stream=sys.stderr)
 
 
-def _persist_phone_identity(settings, phone: str) -> None:
+def _persist_phone_identity(
+    settings, phone: str, namespace: str = DEFAULT_NAMESPACE
+) -> None:
     from telegram.credential_state import _write_single_user_config
 
-    _write_single_user_config({"TELEGRAM_PHONE": phone})
-    _api_identity_store().save({"api_id": str(settings.api_id)})
+    _write_single_user_config({"TELEGRAM_PHONE": phone}, namespace)
+    _store(_MARKER_LEAF, namespace).save({"api_id": str(settings.api_id)})
 
 
 # --- logout ---
 
 
-def _handle_logout(args: argparse.Namespace) -> int:
-    from telegram.config import Settings
+def _configure_logout(p: argparse.ArgumentParser) -> None:
+    p.description = (
+        "Revoke and delete the Telethon session and remove the saved "
+        "credentials of one namespace."
+    )
+    p.add_argument("--yes", action="store_true", default=False)
+    _add_user_arg(p)
 
-    settings = Settings()
+
+def _confirmed(namespace: str, *, yes: bool) -> bool:
+    if yes:
+        return True
+    if not sys.stdin.isatty():
+        print(
+            "telegram: refusing to log out without --yes in non-interactive mode",
+            file=sys.stderr,
+        )
+        return False
+    print(
+        f"Remove the Telegram session and credentials of namespace "
+        f"{namespace!r}? [y/N] ",
+        end="",
+        file=sys.stderr,
+        flush=True,
+    )
+    if sys.stdin.readline().strip().lower() in ("y", "yes"):
+        return True
+    print("telegram: aborted", file=sys.stderr)
+    return False
+
+
+def _handle_logout(args: argparse.Namespace) -> int:
+    namespace: str = args.user
+    if not _confirmed(namespace, yes=args.yes):
+        return 1
+
+    settings = _settings_for(namespace)
     session_path = settings.session_path
     actions: list[str] = []
 
     if session_path.exists():
         try:
-            asyncio.run(_revoke_session(settings))
+            asyncio.run(_revoke_session(settings, namespace))
             actions.append("revoked Telegram session server-side")
         except Exception as e:
-            from telegram.relay_setup import _sanitize_error
+            from telegram.errors import _sanitize_error
 
             print(
                 "Warning: could not revoke session server-side: "
@@ -204,9 +282,11 @@ def _handle_logout(args: argparse.Namespace) -> int:
         except FileNotFoundError:
             pass
 
-    if _clear_single_user_config():
+    if _clear_single_user_config(namespace):
         actions.append("cleared saved credentials")
-    if _clear_api_identity_marker():
+    if _clear_blob(_SESSION_LEAF, namespace):
+        actions.append("cleared stored session blob")
+    if _clear_blob(_MARKER_LEAF, namespace):
         actions.append("cleared api identity marker")
 
     if not actions:
@@ -219,10 +299,10 @@ def _handle_logout(args: argparse.Namespace) -> int:
     return 0
 
 
-async def _revoke_session(settings) -> None:
+async def _revoke_session(settings, namespace: str = DEFAULT_NAMESPACE) -> None:
     from telegram.backends.user_backend import UserBackend
 
-    backend = UserBackend(settings)
+    backend = UserBackend(settings, namespace=namespace)
     await backend.connect()
     try:
         await backend.log_out()
@@ -230,29 +310,28 @@ async def _revoke_session(settings) -> None:
         await backend.disconnect()
 
 
-def _clear_single_user_config() -> bool:
+def _clear_single_user_config(namespace: str = DEFAULT_NAMESPACE) -> bool:
     from telegram.credential_state import (
         _delete_single_user_config,
         _read_single_user_config,
     )
 
-    existed = bool(_read_single_user_config())
-    if existed:
-        _delete_single_user_config()
+    existed = bool(_read_single_user_config(namespace))
+    _delete_single_user_config(namespace)
     return existed
 
 
-def _clear_api_identity_marker() -> bool:
-    store = _api_identity_store()
-    existed = bool(store.load())
+def _store(leaf: str, namespace: str):
+    from telegram.credential_state import plugin_store
+
+    return plugin_store(leaf, namespace)
+
+
+def _clear_blob(leaf: str, namespace: str) -> bool:
+    store = _store(leaf, namespace)
+    existed = store.has_stored_blob()
     store.clear()
     return existed
-
-
-def _api_identity_store():
-    from mcp_core.storage.per_plugin_store import PerPluginStore
-
-    return PerPluginStore(_MARKER_PLUGIN, sub_key=_MARKER_SUB_KEY)
 
 
 # --- entry ---
@@ -263,7 +342,7 @@ def _extras() -> dict:
         "auth": (_configure_auth, _handle_auth),
         # `login` is a deprecated alias of `auth`, kept one release cycle.
         "login": (_configure_login, _handle_login),
-        "logout": _handle_logout,
+        "logout": (_configure_logout, _handle_logout),
     }
 
 
@@ -273,18 +352,49 @@ def _version() -> str:
     return __version__
 
 
-def main() -> int:
+# hull built-ins that read the default-namespace config blob directly.
+_STORE_BUILTINS = frozenset({"config", "status", "doctor"})
+
+
+def _migrate_legacy_for_builtins(argv: list[str]) -> None:
+    """Migrate a pre-hull ``config.enc`` entry before a store built-in runs.
+
+    hull's ``config``/``status``/``doctor`` read only the PerPluginStore, so an
+    upgraded install whose credentials still sit in the legacy entry would be
+    reported as "not configured" until the server first starts. A failed
+    migration is logged by type only and the built-in still runs.
+    """
+    if not argv or argv[0] not in _STORE_BUILTINS:
+        return
+    from telegram.credential_state import _read_single_user_config
+
+    try:
+        _read_single_user_config()
+    except Exception as e:  # unreadable legacy file or store
+        print(
+            f"warning: legacy credential migration skipped ({type(e).__name__})",
+            file=sys.stderr,
+        )
+
+
+def main(argv: list[str] | None = None) -> int:
+    from telegram.config import quarantine_foreign_machine_key
+
+    args = sys.argv[1:] if argv is None else argv
+    # hull's built-ins (status/config/doctor) open the store directly; move a
+    # pre-hull .secret aside first so they do not fail on it.
+    quarantine_foreign_machine_key()
+    _migrate_legacy_for_builtins(args)
     return build_cli(
-        # Kept at the pre-rename name (relay_setup.SERVER_NAME) although the
-        # primary console script is now ``telegram``: mcp-core's ``relay`` and
-        # ``doctor`` subcommands key the relay session lock and run mode by
-        # this value, which the server writes under SERVER_NAME.
+        # Display name kept at the published package's console name
+        # (sessions.SERVER_NAME), which is also the key of the legacy
+        # credential entry migrated by credential_state.
         "better-telegram-mcp",
         # Credential slug is "telegram", not the console name minus "-mcp"
-        # ("better-telegram"), so `config`/`doctor` read the same store the
-        # server writes to (credential_state.PLUGIN_NAME).
-        plugin_name=_MARKER_PLUGIN,
+        # ("better-telegram"), so `config`/`status`/`doctor` read the same
+        # store the server writes to (credential_state.PLUGIN_NAME).
+        plugin_name=PLUGIN_NAME,
         serve=_serve,
         extra=_extras(),
         version=_version(),
-    )(None)
+    )(argv)

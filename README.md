@@ -5,7 +5,7 @@ mcp-name: io.github.n24q02m/better-telegram-mcp
 **Telegram for AI agents: messages, chats, media, and contacts in bot and user-account modes.**
 
 <!-- Badge Row 1: Status -->
-[![Mode](https://img.shields.io/badge/mode-http_remote_relay_%C2%B7_http_local_relay_%C2%B7_stdio_proxy-5C6BC0)](https://mcp.n24q02m.com/get-started/modes-overview/)
+[![Mode](https://img.shields.io/badge/mode-stdio_%C2%B7_http_self--host-5C6BC0)](#setup)
 [![CI](https://github.com/n24q02m/telegram/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/telegram/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/n24q02m/telegram/graph/badge.svg?token=d0fef60a-542e-4be2-9528-6e3a12931067)](https://codecov.io/gh/n24q02m/telegram)
 [![PyPI](https://img.shields.io/pypi/v/n24q02m-telegram?logo=pypi&logoColor=white)](https://pypi.org/project/n24q02m-telegram/)
@@ -51,12 +51,12 @@ mcp-name: io.github.n24q02m/better-telegram-mcp
 ## Table of contents
 
 - [Features](#features)
-- [Status](#status)
 - [Install](#install)
+- [Setup](#setup)
 - [Smithery](#smithery)
 - [Configuration](#configuration)
+- [HTTP mode](#http-mode)
 - [CLI](#cli)
-- [Documentation](#documentation)
 - [Tools](#tools)
 - [Comparison](#comparison)
 - [Security](#security)
@@ -73,56 +73,31 @@ mcp-name: io.github.n24q02m/better-telegram-mcp
 ## Features
 
 - **Dual mode** -- Bot API (httpx) for bots, MTProto (Telethon) for user accounts
-- **7 tools** with action dispatch: `message`, `chat`, `media`, `contact`, `config`, `help`, `config__open_relay`
-- **Auto-detect mode** -- Set bot token for bot mode, or API credentials for user mode
-- **Web-based OTP auth** -- HTTP-mode browser relay form handles phone, OTP, and 2FA for user accounts
-- **Local CLI auth** -- `auth` configures a single-user machine; `login` remains a deprecated alias
+- **6 tools** with action dispatch: `message`, `chat`, `media`, `contact`, `config`, `help`
+- **Auto-detect mode** -- Set a bot token for bot mode, or a phone number for user mode
+- **Local CLI auth** -- `telegram auth` handles the bot token, or phone + OTP + 2FA, on the machine that runs the server
+- **Stdio or HTTP** -- stdio by default; HTTP with no-auth (loopback only), a single bearer token, or per-user tokens
 - **Tool annotations** -- Each tool declares `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`
 - **MCP Resources** -- Documentation available as `telegram://docs/*` resources
-- **Security hardened** -- SSRF protection, path traversal prevention, error sanitization
-
-## Status
-
-The executable defaults to **stdio** for local single-user operation. HTTP is
-opted into with `--http`, `MCP_TRANSPORT=http`, or `TRANSPORT_MODE=http`; HTTP
-is the deployment mode for browser relay setup and optional multi-user access.
-The canonical stack mode matrix names **HTTP remote relay** as the deployed
-Telegram default, so changing the executable default requires a separate
-transport-contract decision and migration. This repository does not silently
-claim those two defaults are already reconciled.
-
-There are no daemon-bridge layers and no auto-spawn from stdio. See [Modes
-overview](https://mcp.n24q02m.com/get-started/modes-overview/) for the full
-transport model.
-
-Sister MCP servers from the same author are listed in the [collapsible section
-above](#telegram) -- they share this architecture, so install
-patterns transfer.
+- **Security hardened** -- SSRF protection, path traversal prevention, error sanitization, prompt-injection boundary tags on Telegram content
 
 ## Install
 
 ```bash
-# Local default: plugin install via Claude Code (stdio, bot mode)
+# Claude Code plugin (stdio, bot mode)
 /plugin marketplace add n24q02m/claude-plugins
 /plugin install better-telegram-mcp@n24q02m-plugins
 
-# Method 1 (CLI): direct uvx invocation (stdio, bot mode)
+# Direct uvx invocation (stdio, bot mode)
 claude mcp add telegram -e TELEGRAM_BOT_TOKEN=123456:ABC-DEF -- uvx n24q02m-telegram
 
-# Method 2 (fallback): Docker stdio
+# Docker stdio
 docker run -i --rm -e TELEGRAM_BOT_TOKEN=123456:ABC-DEF n24q02m/telegram
-
-# Method 3 (recommended for user mode / multi-device / OAuth): Docker HTTP
-docker run -d --name telegram-http -p 8080:8080 \
-  -e MCP_TRANSPORT=http \
-  -e PUBLIC_URL=https://telegram.example.com \
-  -e MCP_DCR_SERVER_SECRET=<32+ random bytes> \
-  n24q02m/telegram:latest
 ```
 
-The package is `n24q02m-telegram` (formerly `better-telegram-mcp`; old package
-receives one final release then freezes). The MCP Registry id stays
-`io.github.n24q02m/better-telegram-mcp`, the Docker image is now
+The package is `n24q02m-telegram` (formerly `better-telegram-mcp`; the old
+package receives one final release then freezes). The MCP Registry id stays
+`io.github.n24q02m/better-telegram-mcp`, the Docker image is
 `n24q02m/telegram`, and the legacy `better-telegram-mcp` command is kept as an
 alias of `telegram`. Local data moves once from `~/.better-telegram-mcp` to
 `~/.telegram` on first start.
@@ -132,115 +107,125 @@ alias of `telegram`. Local data moves once from `~/.better-telegram-mcp` to
 | Client | Install |
 |:-------|:--------|
 | Claude Code | `/plugin marketplace add n24q02m/claude-plugins` + `/plugin install better-telegram-mcp@n24q02m-plugins` (stdio bot mode), or `claude mcp add` as in the block above |
-| Cursor / Windsurf / Gemini CLI / any MCP client | `mcpServers` JSON in the client's config — stdio `command`, or `type: "http"` + `url` pointing at a deployment |
+| Cursor / Windsurf / Gemini CLI / any MCP client | `mcpServers` JSON in the client's config: stdio `command`, or `type: "http"` + `url` pointing at a server you run (see [HTTP mode](#http-mode)) |
 
-Full per-client walkthroughs: [mcp.n24q02m.com/servers/better-telegram-mcp/setup/](https://mcp.n24q02m.com/servers/better-telegram-mcp/setup/).
+**Install with AI agent** -- paste this to your AI coding agent:
 
-Stdio mode is local single-user mode. Bot mode uses `TELEGRAM_BOT_TOKEN`; user mode
-can be configured locally with `telegram auth --phone <+number>`. HTTP
-user mode uses the browser-based relay form at `/authorize` for phone, OTP, and 2FA.
+> Install MCP server `telegram` following the steps at
+> https://raw.githubusercontent.com/n24q02m/claude-plugins/main/plugins/better-telegram-mcp/setup-with-agent.md
 
-**Remote endpoint** -- an HTTP deployment is OAuth-gated and serves `/mcp`. Point any
-MCP client that speaks Streamable HTTP + OAuth 2.1 at `https://<your-host>/mcp`; each
-user completes the browser relay setup (bot token, or phone + OTP) on first connect.
-To run one, use the Docker HTTP method above.
+## Setup
 
-Full setup matrices live at the canonical docs site
-[mcp.n24q02m.com/servers/better-telegram-mcp/setup/](https://mcp.n24q02m.com/servers/better-telegram-mcp/setup/),
-and the paste-to-agent snippets at
-[claude-plugins/plugins/better-telegram-mcp/setup-with-agent.md](https://github.com/n24q02m/claude-plugins/blob/main/plugins/better-telegram-mcp/setup-with-agent.md).
+Credentials are configured on the machine that runs the server.
+
+**Bot mode:** set `TELEGRAM_BOT_TOKEN` in the client config, or save it once:
+
+```bash
+telegram auth --bot-token 123456:ABC-DEF
+```
+
+**User mode:** sign in interactively with your phone number. Telegram sends an
+OTP; a 2FA password is prompted if the account has one. The Telethon session
+is stored on disk.
+
+```bash
+telegram auth --phone +15551234567
+```
+
+Check the result with `telegram status`. The server reads saved credentials at
+startup, so restart it after `telegram auth`. Without any credentials the
+stdio server prints these instructions to stderr and exits with status 1.
 
 ## Smithery
 
 Also listed on [Smithery](https://smithery.ai/servers/n24q02m/better-telegram-mcp).
 Per [`smithery.yaml`](smithery.yaml), Smithery starts the server over **stdio** with
 `uvx --python 3.13 n24q02m-telegram` and takes **no install-time configuration**
-(empty `configSchema`) -- credentials are provided at runtime through the server's own
-setup flow: the `TELEGRAM_BOT_TOKEN` env var or local `auth` command for stdio
-single-user mode, or the browser relay form for HTTP user mode (see
-[Configuration](#configuration)).
+(empty `configSchema`). Credentials come from the `TELEGRAM_BOT_TOKEN` env var or
+a prior `telegram auth` (see [Setup](#setup)).
 
 ## Configuration
 
 Settings load from `TELEGRAM_`-prefixed environment variables (Pydantic Settings).
-
-**Stdio mode (local single-user):**
+Env vars take precedence over credentials saved by `telegram auth`.
 
 | Variable | Required | Description |
 |:---------|:---------|:------------|
-| `TELEGRAM_BOT_TOKEN` | Yes | Bot token from [@BotFather](https://t.me/BotFather) (format `123456789:ABCdef...`) |
+| `TELEGRAM_BOT_TOKEN` | Bot mode | Bot token from [@BotFather](https://t.me/BotFather) (format `123456789:ABCdef...`) |
+| `TELEGRAM_PHONE` | User mode | Phone number in `+<country><number>` form |
+| `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` | No | Override the bundled public API pair |
+| `USE_BUNDLED_TELEGRAM_CLIENT` | No | Set to `false` to require your own API pair |
+| `TELEGRAM_SESSION_NAME` | No | Telethon session file name (default `default`) |
+| `TELEGRAM_DATA_DIR` | No | Session directory (default `~/.telegram`) |
+| `MCP_TRANSPORT` | No | Set to `http` to start in HTTP mode (`--http` or `TRANSPORT_MODE=http` also work) |
 
-**HTTP mode (bot + user):** credentials are entered via the browser relay form,
-not env vars. Server-side env vars for self-hosting:
+There is no `TELEGRAM_PASSWORD` env var: `telegram auth` prompts for the 2FA
+password and never stores it in the environment.
 
-| Variable | Required | Default | Description |
-|:---------|:---------|:--------|:------------|
-| `MCP_TRANSPORT` | Yes | `stdio` | Set to `http` to enable HTTP mode (`--http` CLI flag or `TRANSPORT_MODE=http` also work) |
-| `PUBLIC_URL` | Self-host | -- | Public URL of the server; presence enables the multi-user OAuth branch |
-| `MCP_DCR_SERVER_SECRET` | Self-host | -- | Multi-user OAuth shared secret, 32+ random bytes (legacy `DCR_SERVER_SECRET` still accepted) |
-| `HOST` | No | `0.0.0.0` | Bind address |
-| `PORT` | No | `8080` | HTTP port |
+## HTTP mode
 
-**User-mode credentials (optional overrides):** `TELEGRAM_API_ID` and
-`TELEGRAM_API_HASH` ship with built-in public dev defaults, so only
-`TELEGRAM_PHONE` is needed to start the phone + OTP flow. `TELEGRAM_SESSION_NAME`
-and `TELEGRAM_DATA_DIR` customize the Telethon session file location. There is no
-`TELEGRAM_PASSWORD` env var -- HTTP relay 2FA is entered through the web UI; local
-CLI auth prompts interactively and never stores it in the environment.
+`telegram --http` serves MCP at `/mcp` and an unauthenticated `GET /health`.
+Settings live in `~/.telegram/config.toml`:
+
+```toml
+[server]
+host = "127.0.0.1"   # default; --host overrides
+port = 8000          # default; --port overrides
+auth = "token"       # "no-auth" | "token" | "multi"
+token_hash = "scrypt$..."
+```
+
+| `auth` | Who can connect | Credentials used |
+|:-------|:----------------|:-----------------|
+| `no-auth` | Anyone who can reach the port; loopback binds only (a non-loopback host is refused) | The default credentials |
+| `token` | Clients sending `Authorization: Bearer <token>` matching `token_hash` | The default credentials |
+| `multi` | Users listed in `users.toml` (default `~/.telegram/users.toml`), each with their own token | Each user's own namespace |
+
+Create a token hash with `telegram token hash` (it reads the token from stdin
+or a prompt, never from the command line). In `multi` mode, add users by
+editing `users.toml` and restarting the server:
+
+```toml
+[users.alice]
+token_hash = "scrypt$..."
+enabled = true
+namespace = "alice"
+```
+
+Then authorize Telegram for that user on the server machine:
+
+```bash
+telegram auth --phone +15551234567 --user alice
+```
+
+To reach a server on another machine, put it behind a TLS-terminating reverse
+proxy or a private network and use `token` or `multi` auth.
 
 ## CLI
 
 The `telegram` console script (installed by `uvx` / `pip`; `better-telegram-mcp`
-server** when run with no subcommand, and exposes a few operator subcommands for local
-single-user setup and diagnostics. Any flag that is not a subcommand is passed straight
-through to the server (e.g. `--http`).
+is a legacy alias) starts the MCP server when run without a subcommand. Flags
+that are not a subcommand are passed through to the server (for example
+`--http`, `--host`, `--port`).
 
 ```bash
-telegram            # start the MCP server (stdio, bot mode by default)
+telegram            # start the MCP server (stdio)
 telegram --http     # start in HTTP mode
 telegram --version  # print the version
 ```
 
-**Subcommands** (`telegram <subcommand>`):
-
 | Subcommand | Usage | Description |
 |:-----------|:------|:------------|
-| `auth` | `auth --bot-token <token>` or `auth --phone <+number>` | Authenticate this machine (single-user). Bot mode validates the token; phone mode runs the interactive OTP/2FA flow and stores the Telethon session on disk |
+| `auth` | `auth --bot-token <token>` or `auth --phone <+number>`, optional `--user <ns>` | Authorize this machine. Bot mode validates the token; phone mode runs the interactive OTP/2FA flow and stores the Telethon session on disk |
 | `login` | Same arguments as `auth` | Deprecated alias of `auth` |
-| `logout` | `logout` | Revoke the Telegram session server-side, delete the local session file, and clear saved credentials |
-| `config` | `config status`, `config delete [--yes]` | Show or delete the saved local credential config (env overrides still take precedence at server start) |
-| `relay` | `relay status`, `relay open`, `relay reset` | Inspect, open (print a fresh setup URL for), or reset the browser relay setup session |
-| `doctor` | `doctor` | Print environment diagnostics -- Python version, credential backend, config + relay state, and transport mode |
+| `logout` | `logout [--yes] [--user <ns>]` | Revoke the Telegram session, delete the session file and the saved credentials |
+| `config` | `config status`, `config delete --yes` | Show or delete the saved credential config |
+| `status` | `status` | Show whether credentials are configured |
+| `doctor` | `doctor` | Print environment diagnostics |
+| `token` | `token hash` | Hash a bearer token for `config.toml` / `users.toml` |
 
-```bash
-# Bot mode: validate a bot token and save it to the local config
-telegram auth --bot-token 123456:ABC-DEF
-
-# User mode: interactive phone + OTP (+ 2FA if enabled) sign-in
-telegram auth --phone +15551234567
-
-# Remove local credentials and revoke the session
-telegram logout
-```
-
-The `auth` command, its deprecated `login` alias, and `logout` are single-user and local-machine only -- they write
-the on-disk Telethon session and the encrypted single-user config, so run them on the
-machine that hosts the stdio server. For remote / multi-user HTTP deployments,
-credentials are entered through the browser relay form instead (see the
-[remote endpoint](#install) and [Configuration](#configuration)).
-
-## Documentation
-
-Full docs at **[mcp.n24q02m.com/servers/better-telegram-mcp/](https://mcp.n24q02m.com/servers/better-telegram-mcp/)**:
-
-- [Setup](https://mcp.n24q02m.com/servers/better-telegram-mcp/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
-- [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- stdio (local, single-user) and HTTP (remote, OAuth 2.1)
-- [Multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/) -- per-JWT-sub credential model
-
-**Install with AI agent** -- paste this to your AI coding agent:
-
-> Install MCP server `telegram` following the steps at
-> https://raw.githubusercontent.com/n24q02m/claude-plugins/main/plugins/better-telegram-mcp/setup-with-agent.md
+`--user` selects the storage namespace (default `default`, used by stdio and
+the `no-auth` / `token` HTTP modes). Unknown subcommands exit with status 2.
 
 ## Tools
 
@@ -250,9 +235,8 @@ Full docs at **[mcp.n24q02m.com/servers/better-telegram-mcp/](https://mcp.n24q02
 | `chat` | `list`, `info`, `create`, `join`, `leave`, `members`, `admin`, `settings`, `topics` | List and manage chats, groups, channels. Members, admin, forum topics |
 | `media` | `send_photo`, `send_file`, `send_voice`, `send_video`, `download` | Send photos, files, voice notes, videos. Download media from messages |
 | `contact` | `list`, `search`, `add`, `block` | List, search, add contacts. Block/unblock users (user mode only) |
-| `config` | `status`, `set`, `cache_clear`, `setup_status`, `setup_start`, `setup_reset`, `setup_complete` | Server status, runtime settings, cache, credential setup (relay, status, reset, complete) |
+| `config` | `status`, `set`, `cache_clear` | Server status, runtime settings (`message_limit`, `timeout`), cache |
 | `help` | -- | Full documentation for any topic |
-| `config__open_relay` | -- | Re-trigger the zero-config relay setup flow (prints a fresh relay URL for the browser form). Registered via `mcp-core`'s `register_open_relay_tool` so an LLM can restart setup without a manual restart |
 
 ### MCP Resources
 
@@ -275,8 +259,7 @@ How telegram stacks up against direct competitors in each pillar:
 | Send / edit / delete messages | Yes | Yes | No (read-only, draft only) | Yes (send only) |
 | Media download from messages | Yes | Yes | Yes | No (send only) |
 | Contact management (add / block) | Yes (user mode) | Yes | Partial (list only) | No |
-| Web-based / browser OTP auth | Yes (relay form, headless) | No (CLI session string) | No (CLI sign-in) | No (pre-set bot token) |
-| Multi-user remote, per-user isolation | Yes (per-JWT-sub backends) | No | No | No |
+| Multi-user HTTP, per-user isolation | Yes (per-user tokens and namespaces) | No | No | No |
 | SSRF protection | Yes (URL validation + DNS-rebinding) | ? | ? | No |
 | Path-traversal prevention | Yes | Yes (real-path allowed-root) | ? | No |
 | Self-hostable | Yes | Yes | Yes | Yes |
@@ -285,8 +268,9 @@ How telegram stacks up against direct competitors in each pillar:
 
 - **SSRF Protection** -- All URLs validated against internal/private IP ranges, DNS rebinding blocked
 - **Path Traversal Prevention** -- File paths validated, sensitive directories blocked
-- **Session File Security** -- 600 permissions, 2FA via web UI only (never stored in env vars)
-- **Error Sanitization** -- Credentials never leaked in error messages
+- **Session File Security** -- 600 permissions; the 2FA password is prompted, never stored in env vars
+- **Error Sanitization** -- Credentials and bot tokens are never leaked in error messages or logs
+- **Prompt-injection boundaries** -- Telegram content returned by tools is wrapped in untrusted-content tags
 
 ## Build from Source
 
@@ -299,32 +283,16 @@ uv run telegram
 
 ## Trust Model
 
-This plugin implements **TC-NearZK** (in-memory, ephemeral). See [mcp-core trust model](https://mcp.n24q02m.com/servers/mcp-core/trust-model/) for full classification.
+The project does not operate a hosted Telegram endpoint. The server runs on
+infrastructure you control, and credentials never leave that machine.
 
-The project no longer operates an n24q02m-hosted Telegram endpoint. HTTP mode is available only on infrastructure an operator deploys and controls.
+| Data | Location | Protection |
+|---|---|---|
+| Saved credentials (bot token / phone) | `~/.telegram/config.json`; `~/.telegram/subs/<ns>/config.json` in `multi` mode | AES-256-GCM with the machine key `~/.telegram/.secret` |
+| Telethon sessions | `~/.telegram/<name>.session`; `~/.telegram/subs/<ns>/` in `multi` mode | File permission 0600 |
+| HTTP bearer tokens | `token_hash` in `config.toml` / `users.toml` | Stored only as scrypt hashes |
 
-| Mode | Storage | Encryption | Who can read your data? |
-|---|---|---|---|
-| HTTP self-host (opt-in) | In-memory `dict[sub] = MTProtoSession` | In-process only | Operator-controlled server process (cleared on restart) |
-| stdio | `~/.config/mcp/config.enc` (credentials) + `~/.telegram/<name>.session` (Telethon session) | AES-GCM, machine-bound key | Only your OS user (file perm 0600) |
-
-### Workspace username (HTTP setup form)
-
-The browser setup form has an optional **workspace username** field. Entering the
-same username always lands you in the same per-`sub` bucket, so your session stays
-reachable across a re-authorization and across devices, instead of being tied to
-the one-off subject minted for each `/authorize` round-trip. Leaving it blank
-keeps the previous per-authorize behaviour.
-
-Trust boundary: when the form is gated by a *shared* `MCP_RELAY_PASSWORD`, the
-username is a partition key, not a secret -- anyone who knows that password can
-type any username and reach that bucket. That is fine for a trusted group; an
-untrusted multi-tenant deployment needs a per-user secret or delegated OAuth
-instead.
-
-**One-time migration:** existing users must re-authenticate once after this
-change. Nothing is deleted; sessions stored under the old random subject are
-simply no longer addressed.
+Anyone with access to your OS user account can read these files.
 
 ## License
 

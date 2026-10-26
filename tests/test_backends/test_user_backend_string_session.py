@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from mcp_core.storage.backends import InMemoryBackend
-from mcp_core.storage.string_session_store import SaveOnChangeStringSession
+from hull_core.storage import InMemoryBackend, SaveOnChangeStringSession
 
 from telegram.backends.user_backend import UserBackend
 from telegram.config import Settings

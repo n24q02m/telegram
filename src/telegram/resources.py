@@ -1,4 +1,4 @@
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 
 def register_resources(mcp: FastMCP) -> None:

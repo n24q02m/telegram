@@ -1,1 +1,1 @@
-"""Authentication modules for multi-user HTTP mode."""
+"""Per-namespace Telegram backends for hull's multi-user HTTP mode."""

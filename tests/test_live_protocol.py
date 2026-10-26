@@ -67,7 +67,7 @@ class TestWithAuth:
     """Tests that require a valid TELEGRAM_BOT_TOKEN."""
 
     async def test_list_tools_with_auth(self):
-        """Server exposes exactly 7 tools when authenticated."""
+        """Server exposes exactly 6 tools when authenticated."""
         async with stdio_client(_server_params(with_token=True)) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
@@ -80,7 +80,6 @@ class TestWithAuth:
                     "contact",
                     "config",
                     "help",
-                    "config__open_relay",
                 }
                 assert expected == names, f"Expected {expected}, got {names}"
 

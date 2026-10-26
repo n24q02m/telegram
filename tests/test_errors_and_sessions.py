@@ -1,4 +1,4 @@
-"""Tests for relay setup integration."""
+"""Tests for error sanitisation, saved-session detection and saved-config settings."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from telegram.config import Settings
-from telegram.relay_setup import (
+from telegram.errors import (
     _needs_2fa_password,
     _sanitize_error,
     redact_bot_token,
@@ -42,26 +42,26 @@ def test_sanitize_error_redacts_bot_token():
     assert _FAKE_SECRET not in redacted
 
 
-# --- Settings.from_relay_config ---
+# --- Settings.from_saved_config ---
 
 
-def test_from_relay_config_bot_mode():
-    """Create Settings from relay config with bot token."""
+def test_from_saved_config_bot_mode():
+    """Create Settings from saved config with bot token."""
     config = {"TELEGRAM_BOT_TOKEN": "123456:ABC-DEF"}
-    s = Settings.from_relay_config(config)
+    s = Settings.from_saved_config(config)
     assert s.bot_token == "123456:ABC-DEF"
     assert s.mode == "bot"
     assert s.is_configured is True
 
 
-def test_from_relay_config_user_mode():
-    """Create Settings from relay config with user credentials."""
+def test_from_saved_config_user_mode():
+    """Create Settings from saved config with user credentials."""
     config = {
         "TELEGRAM_API_ID": "12345",
         "TELEGRAM_API_HASH": "abcdef123456",
         "TELEGRAM_PHONE": "+84912345678",
     }
-    s = Settings.from_relay_config(config)
+    s = Settings.from_saved_config(config)
     assert s.api_id == 12345
     assert s.api_hash == "abcdef123456"
     assert s.phone == "+84912345678"
@@ -69,18 +69,18 @@ def test_from_relay_config_user_mode():
     assert s.is_configured is True
 
 
-def test_from_relay_config_empty_values():
-    """Empty values in relay config should result in unconfigured state."""
+def test_from_saved_config_empty_values():
+    """Empty values in saved config should result in unconfigured state."""
     config = {"TELEGRAM_BOT_TOKEN": ""}
-    s = Settings.from_relay_config(config)
+    s = Settings.from_saved_config(config)
     assert s.bot_token is None  # _empty_to_none normalizes it
     assert s.is_configured is False
 
 
-def test_from_relay_config_missing_keys():
+def test_from_saved_config_missing_keys():
     """Missing keys should use built-in defaults for api_id/api_hash."""
     config = {}
-    s = Settings.from_relay_config(config)
+    s = Settings.from_saved_config(config)
     assert s.bot_token is None
     assert s.api_id == 37984984  # built-in default
     assert s.api_hash == "2f5f4c76c4de7c07302380c788390100"  # built-in default
@@ -92,7 +92,7 @@ def test_from_relay_config_missing_keys():
 
 def test_check_saved_sessions_no_dir(tmp_path):
     """Returns False when data directory does not exist."""
-    from telegram.relay_setup import check_saved_sessions
+    from telegram.sessions import check_saved_sessions
 
     with patch(
         "pathlib.Path.home",
@@ -103,7 +103,7 @@ def test_check_saved_sessions_no_dir(tmp_path):
 
 def test_check_saved_sessions_empty_dir(tmp_path):
     """Returns False when data directory exists but has no session files."""
-    from telegram.relay_setup import check_saved_sessions
+    from telegram.sessions import check_saved_sessions
 
     data_dir = tmp_path / ".telegram"
     data_dir.mkdir()
@@ -117,7 +117,7 @@ def test_check_saved_sessions_empty_dir(tmp_path):
 
 def test_check_saved_sessions_with_sessions(tmp_path):
     """Returns True when session files exist."""
-    from telegram.relay_setup import check_saved_sessions
+    from telegram.sessions import check_saved_sessions
 
     data_dir = tmp_path / ".telegram"
     data_dir.mkdir()
@@ -143,12 +143,12 @@ async def test_lifespan_tries_credential_state_when_unconfigured():
     mock_bot = AsyncMock()
     mock_bot.is_authorized = AsyncMock(return_value=True)
 
-    # Bare Settings() -> unconfigured; explicit from_relay_config -> configured.
+    # Bare Settings() -> unconfigured; explicit from_saved_config -> configured.
     unconfigured_settings = MagicMock(is_configured=False)
     configured_settings = MagicMock(
         is_configured=True,
         mode="bot",
-        bot_token="relay:TOKEN",
+        bot_token="saved:TOKEN",
     )
 
     def mock_resolve():
@@ -162,7 +162,7 @@ async def test_lifespan_tries_credential_state_when_unconfigured():
         ),
         patch(
             "telegram.credential_state._read_single_user_config",
-            return_value={"TELEGRAM_BOT_TOKEN": "relay:TOKEN"},
+            return_value={"TELEGRAM_BOT_TOKEN": "saved:TOKEN"},
         ),
         patch.dict(
             "sys.modules",
@@ -174,7 +174,7 @@ async def test_lifespan_tries_credential_state_when_unconfigured():
         ),
     ):
         mock_settings_cls.return_value = unconfigured_settings
-        mock_settings_cls.from_relay_config.return_value = configured_settings
+        mock_settings_cls.from_saved_config.return_value = configured_settings
 
         async with _lifespan(mcp):
             assert srv._backend is mock_bot
@@ -193,46 +193,17 @@ async def test_lifespan_falls_back_to_unconfigured_when_no_credentials():
     def mock_resolve():
         return CredentialState.AWAITING_SETUP
 
-    # Reset _multi_user_mode flag — earlier tests may have called
-    # create_http_mcp_server() which flips it globally. Unconfigured
-    # fallback is single-user-mode behavior; multi-user has its own
-    # branch that yields immediately without setting _unconfigured.
-    original_multi_user = srv._multi_user_mode
-    srv._multi_user_mode = False
-    try:
-        with (
-            patch.object(srv, "Settings", return_value=MagicMock(is_configured=False)),
-            patch(
-                "telegram.credential_state.resolve_credential_state",
-                side_effect=mock_resolve,
-            ),
-        ):
-            async with _lifespan(mcp):
-                assert srv._unconfigured is True
+    with (
+        patch.object(srv, "Settings", return_value=MagicMock(is_configured=False)),
+        patch(
+            "telegram.credential_state.resolve_credential_state",
+            side_effect=mock_resolve,
+        ),
+    ):
+        async with _lifespan(mcp):
+            assert srv._unconfigured is True
 
-            assert srv._unconfigured is False
-    finally:
-        srv._multi_user_mode = original_multi_user
-
-
-# --- relay_schema ---
-
-
-def test_relay_schema_structure():
-    """Verify relay schema has correct structure (flat fields for local OAuth form)."""
-    from telegram.relay_schema import RELAY_SCHEMA, RELAY_SCHEMA_MODES
-
-    # Flat schema for local OAuth form
-    assert RELAY_SCHEMA["server"] == "better-telegram-mcp"
-    assert RELAY_SCHEMA["displayName"] == "Telegram MCP"
-    keys = [f["key"] for f in RELAY_SCHEMA["fields"]]
-    assert "TELEGRAM_BOT_TOKEN" in keys
-    assert "TELEGRAM_PHONE" in keys
-
-    # Modes schema for relay page (backward compat)
-    assert len(RELAY_SCHEMA_MODES["modes"]) == 2
-    assert RELAY_SCHEMA_MODES["modes"][0]["id"] == "bot"
-    assert RELAY_SCHEMA_MODES["modes"][1]["id"] == "user"
+        assert srv._unconfigured is False
 
 
 # --- _sanitize_error ---

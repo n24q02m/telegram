@@ -1775,7 +1775,11 @@ class TestUserBackendLogging:
 class TestApiIdentityMarker:
     """_warn_on_api_identity_change only warns when the recorded id differs."""
 
-    def _backend(self, tmp_path, api_id=12345):
+    # The marker is the real hull PerPluginStore blob under the fake home of
+    # the autouse ``_isolate_per_plugin_home`` fixture (what `auth --phone`
+    # writes), so these exercise the real read path.
+
+    def _backend(self, tmp_path, api_id=12345, namespace="default"):
         from telegram.backends.user_backend import UserBackend
 
         settings = Settings(
@@ -1785,55 +1789,47 @@ class TestApiIdentityMarker:
             data_dir=tmp_path,
             session_name="test_session",
         )
-        return UserBackend(settings)
+        return UserBackend(settings, namespace=namespace)
+
+    @staticmethod
+    def _record(api_id: str, namespace: str = "default") -> None:
+        from telegram.credential_state import plugin_store
+
+        plugin_store("tokens/app-identity", namespace).save({"api_id": api_id})
 
     async def test_no_marker_no_warning(self, tmp_path):
         backend = self._backend(tmp_path)
-        store = MagicMock()
-        store.load.return_value = None
-        with (
-            patch(
-                "mcp_core.storage.per_plugin_store.PerPluginStore",
-                return_value=store,
-            ),
-            patch("telegram.backends.user_backend.logger") as mock_logger,
-        ):
+        with patch("telegram.backends.user_backend.logger") as mock_logger:
             await backend._warn_on_api_identity_change()
         mock_logger.warning.assert_not_called()
 
     async def test_matching_marker_no_warning(self, tmp_path):
+        self._record("12345")
         backend = self._backend(tmp_path, api_id=12345)
-        store = MagicMock()
-        store.load.return_value = {"api_id": "12345"}
-        with (
-            patch(
-                "mcp_core.storage.per_plugin_store.PerPluginStore",
-                return_value=store,
-            ),
-            patch("telegram.backends.user_backend.logger") as mock_logger,
-        ):
+        with patch("telegram.backends.user_backend.logger") as mock_logger:
             await backend._warn_on_api_identity_change()
         mock_logger.warning.assert_not_called()
 
     async def test_differing_marker_warns(self, tmp_path):
+        self._record("99999")
         backend = self._backend(tmp_path, api_id=12345)
-        store = MagicMock()
-        store.load.return_value = {"api_id": "99999"}
-        with (
-            patch(
-                "mcp_core.storage.per_plugin_store.PerPluginStore",
-                return_value=store,
-            ),
-            patch("telegram.backends.user_backend.logger") as mock_logger,
-        ):
+        with patch("telegram.backends.user_backend.logger") as mock_logger:
             await backend._warn_on_api_identity_change()
         mock_logger.warning.assert_called_once()
+
+    async def test_marker_is_per_namespace(self, tmp_path):
+        """A differing marker in namespace ``a`` does not warn for ``b``."""
+        self._record("99999", "a")
+        backend = self._backend(tmp_path, api_id=12345, namespace="b")
+        with patch("telegram.backends.user_backend.logger") as mock_logger:
+            await backend._warn_on_api_identity_change()
+        mock_logger.warning.assert_not_called()
 
     async def test_marker_read_error_is_swallowed(self, tmp_path):
         backend = self._backend(tmp_path)
         with (
             patch(
-                "mcp_core.storage.per_plugin_store.PerPluginStore",
+                "telegram.credential_state.plugin_store",
                 side_effect=Exception("backend down"),
             ),
             patch("telegram.backends.user_backend.logger") as mock_logger,

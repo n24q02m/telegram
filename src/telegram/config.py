@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import functools
 import os
-from functools import cached_property
 from pathlib import Path
 from typing import Literal
 
+from hull_core.auth import BundledClientSpec, resolve_bundled_client
 from loguru import logger
-from mcp_core.auth import BundledClientSpec, resolve_bundled_client
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
@@ -19,13 +18,55 @@ def _empty_to_none(v: str | None) -> str | None:
     return v
 
 
-# Default data dir (Telethon ``*.session`` files, ``user_sessions/``, the
-# HTTP-mode ``.secret``). Renamed with the project; the pre-rename directory
-# is moved over once on first use. ``TELEGRAM_DATA_DIR`` bypasses all of this.
-# Not to be confused with mcp-core's ``~/.telegram-mcp/`` (PerPluginStore
-# ``"telegram"``), which mcp-core derives itself and is not moved here.
+# Default data dir (Telethon ``*.session`` files). Renamed with the project;
+# the pre-rename directory is moved over once on first use.
+# ``TELEGRAM_DATA_DIR`` bypasses all of this. The same ``~/.telegram/`` is also
+# hull's ``PerPluginStore("telegram")`` data dir (``config.json``,
+# ``tokens/``, ``subs/<ns>/`` and the 32-byte machine key ``.secret``); hull
+# reads the older ``~/.telegram-mcp/`` layout itself as a legacy location.
 DATA_DIR_NAME = ".telegram"
 LEGACY_DATA_DIR_NAME = ".better-telegram-mcp"
+
+# Releases before the hull migration kept a 64-hex-character HTTP-mode master
+# secret at ``<data dir>/.secret``. hull uses that exact path for its 32-byte
+# machine key and refuses (``MachineKeyError``) to touch a foreign one, so the
+# old file is renamed aside once. Nothing reads the renamed file: it only
+# protected the removed relay-era ``user_sessions/`` store.
+_MACHINE_KEY_FILE = ".secret"
+_MACHINE_KEY_LEN = 32
+QUARANTINED_SECRET_NAME = ".secret.legacy-credential-store"
+
+
+def quarantine_foreign_machine_key() -> Path | None:
+    """Move a pre-hull ``.secret`` out of hull's machine-key path.
+
+    Only a ``.secret`` that is not exactly 32 bytes is moved; a 32-byte file
+    is (or could be) hull's own key and is left alone. The file is renamed,
+    never read, logged or deleted. Returns the new path when a file was moved,
+    else ``None``.
+    """
+    from hull_core.storage import data_dir
+
+    secret = data_dir("telegram") / _MACHINE_KEY_FILE
+    try:
+        size = secret.stat().st_size
+    except FileNotFoundError:
+        return None
+    if size == _MACHINE_KEY_LEN:
+        return None
+    target = secret.with_name(QUARANTINED_SECRET_NAME)
+    n = 0
+    while target.exists():
+        n += 1
+        target = secret.with_name(f"{QUARANTINED_SECRET_NAME}.{n}")
+    os.replace(secret, target)
+    logger.warning(
+        "Moved pre-hull {} ({} bytes, not a hull machine key) to {}.",
+        secret,
+        size,
+        target,
+    )
+    return target
 
 
 def _holds_server_state(directory: Path) -> bool:
@@ -49,12 +90,16 @@ def resolve_default_data_dir() -> Path:
     - Both exist but ``~/.telegram`` holds none of this server's files (an
       unrelated directory): keep the legacy dir rather than strand its
       sessions.
+
+    Whenever ``~/.telegram`` is the result, a pre-hull ``.secret`` in it is
+    moved aside (:func:`quarantine_foreign_machine_key`).
     """
     home = Path.home()
     target = home / DATA_DIR_NAME
     legacy = home / LEGACY_DATA_DIR_NAME
 
     if not legacy.exists():
+        quarantine_foreign_machine_key()
         return target
     if target.exists():
         if _holds_server_state(target):
@@ -65,6 +110,7 @@ def resolve_default_data_dir() -> Path:
                 legacy,
                 target,
             )
+            quarantine_foreign_machine_key()
             return target
         logger.warning(
             "{} exists but holds no telegram server state; still reading legacy "
@@ -88,6 +134,7 @@ def resolve_default_data_dir() -> Path:
 
     if target.is_dir() and not legacy.exists():
         logger.info("Moved data dir {} -> {}", legacy, target)
+        quarantine_foreign_machine_key()
         return target
     logger.warning(
         "Data dir move {} -> {} did not read back as expected; reading the legacy dir.",
@@ -101,7 +148,7 @@ def resolve_default_data_dir() -> Path:
 # env pair > bundled default, unless USE_BUNDLED_TELEGRAM_CLIENT explicitly
 # disables it). This is Telegram's own public desktop app pair
 # (https://core.telegram.org/api/obtaining_api_id) -- hardcoding it here is
-# safe and gives users zero-config user-mode after relay submit.
+# safe and gives users zero-config user mode.
 _BUNDLED_TELEGRAM_API_ID = "37984984"
 _BUNDLED_TELEGRAM_API_HASH = "2f5f4c76c4de7c07302380c788390100"  # gitleaks:allow
 _TELEGRAM_CLIENT_SPEC = BundledClientSpec(
@@ -184,12 +231,15 @@ class Settings(BaseSettings):
         )
 
     @classmethod
-    def from_relay_config(cls, config: dict[str, str]) -> Settings:
-        """Create Settings from relay config dict (from config file or relay setup).
+    def from_saved_config(cls, config: dict[str, str], **overrides: object) -> Settings:
+        """Create Settings from a saved credential dict (written by ``telegram auth``).
 
         Args:
-            config: Dict with keys like TELEGRAM_BOT_TOKEN, TELEGRAM_API_ID, etc.
-            API_ID and API_HASH use built-in defaults if not provided.
+            config: Dict with keys like TELEGRAM_BOT_TOKEN, TELEGRAM_PHONE,
+                TELEGRAM_API_ID. API_ID and API_HASH use the bundled defaults
+                unless the dict sets them.
+            overrides: Extra Settings fields (e.g. ``data_dir`` for a
+                per-namespace session directory).
 
         Returns:
             A configured Settings instance.
@@ -198,31 +248,14 @@ class Settings(BaseSettings):
             "bot_token": config.get("TELEGRAM_BOT_TOKEN"),
             "phone": config.get("TELEGRAM_PHONE"),
         }
-        # Only override defaults if relay explicitly provides values
+        # Only override the bundled defaults when the saved config sets them
         if config.get("TELEGRAM_API_ID"):
             kwargs["api_id"] = int(config["TELEGRAM_API_ID"])
         if config.get("TELEGRAM_API_HASH"):
             kwargs["api_hash"] = config["TELEGRAM_API_HASH"]
+        kwargs.update(overrides)
         return cls(**kwargs)
 
     @property
     def session_path(self) -> Path:
         return self.data_dir / f"{self.session_name}.session"
-
-    @cached_property
-    def secret(self) -> str:
-        """Resolve master encryption secret from env or disk."""
-        # 1. Check explicit env vars (prioritize CREDENTIAL_SECRET)
-        secret = (
-            os.environ.get("CREDENTIAL_SECRET")
-            or os.environ.get("MCP_DCR_SERVER_SECRET")
-            or os.environ.get("DCR_SERVER_SECRET")
-            or os.environ.get("MASTER_SECRET")
-        )
-        if secret:
-            return secret
-
-        # 2. Resolve or generate persistent secret on disk
-        from .transports.credential_store import CredentialStore
-
-        return CredentialStore._resolve_or_generate_secret(self.data_dir)

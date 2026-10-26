@@ -151,54 +151,16 @@ def test_empty_to_none(input_val, expected):
     assert _empty_to_none(input_val) == expected
 
 
-def test_secret_priority_env_credential(monkeypatch):
-    monkeypatch.setenv("CREDENTIAL_SECRET", "env-cred")
-    monkeypatch.setenv("DCR_SERVER_SECRET", "env-dcr")
-    monkeypatch.setenv("MASTER_SECRET", "env-master")
-    s = Settings()
-    assert s.secret == "env-cred"
+def test_settings_hold_no_http_master_secret(tmp_path):
+    """The pre-hull HTTP master secret is gone: hull owns all key material.
 
-
-def test_secret_priority_env_mcp_dcr(monkeypatch):
-    """MCP_DCR_SERVER_SECRET (cross-stack name) wins over legacy DCR_SERVER_SECRET."""
-    monkeypatch.delenv("CREDENTIAL_SECRET", raising=False)
-    monkeypatch.setenv("MCP_DCR_SERVER_SECRET", "env-mcp-dcr")
-    monkeypatch.setenv("DCR_SERVER_SECRET", "env-dcr")
-    monkeypatch.setenv("MASTER_SECRET", "env-master")
-    s = Settings()
-    assert s.secret == "env-mcp-dcr"
-
-
-def test_secret_priority_env_dcr(monkeypatch):
-    """Back-compat: legacy DCR_SERVER_SECRET still resolves when MCP_ name absent."""
-    monkeypatch.delenv("CREDENTIAL_SECRET", raising=False)
-    monkeypatch.delenv("MCP_DCR_SERVER_SECRET", raising=False)
-    monkeypatch.setenv("DCR_SERVER_SECRET", "env-dcr")
-    monkeypatch.setenv("MASTER_SECRET", "env-master")
-    s = Settings()
-    assert s.secret == "env-dcr"
-
-
-def test_secret_persistence(tmp_path):
-    # Test that it generates and persists a secret when no env vars are set
-    import os
-
-    for env in [
-        "CREDENTIAL_SECRET",
-        "MCP_DCR_SERVER_SECRET",
-        "DCR_SERVER_SECRET",
-        "MASTER_SECRET",
-    ]:
-        if env in os.environ:
-            del os.environ[env]
-
+    Settings must not grow a ``secret`` field again, and building Settings
+    must not create a ``.secret`` file in the data dir (hull's machine key
+    lives there and a foreign one breaks the store).
+    """
     s = Settings(data_dir=tmp_path)
-    secret1 = s.secret
-    assert len(secret1) == 64  # urandom(32).hex()
-
-    # Reload settings with same data_dir
-    s2 = Settings(data_dir=tmp_path)
-    assert s2.secret == secret1
+    assert not hasattr(s, "secret")
+    assert not (tmp_path / ".secret").exists()
 
 
 def test_trusted_proxy_list():
@@ -214,20 +176,24 @@ def test_trusted_proxy_list():
     assert s.trusted_proxy_list == frozenset({"127.0.0.1", "10.0.0.1", "192.168.1.1"})
 
 
-def test_from_relay_config():
+def test_from_saved_config(tmp_path):
     config = {
         "TELEGRAM_BOT_TOKEN": "123:ABC",
         "TELEGRAM_PHONE": "+123456789",
         "TELEGRAM_API_ID": "98765",
         "TELEGRAM_API_HASH": "hash123",
     }
-    s = Settings.from_relay_config(config)
+    s = Settings.from_saved_config(config)
     assert s.bot_token == "123:ABC"
     assert s.phone == "+123456789"
     assert s.api_id == 98765
     assert s.api_hash == "hash123"
 
     # Defaults
-    s2 = Settings.from_relay_config({})
+    s2 = Settings.from_saved_config({})
     assert s2.api_id == 37984984
     assert s2.api_hash == "2f5f4c76c4de7c07302380c788390100"
+
+    # Field overrides (per-namespace session dir).
+    s3 = Settings.from_saved_config({"TELEGRAM_PHONE": "+1"}, data_dir=tmp_path)
+    assert s3.session_path == tmp_path / "default.session"

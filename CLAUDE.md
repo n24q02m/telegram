@@ -1,7 +1,11 @@
 # CLAUDE.md - telegram
 
-MCP Server cho Telegram. Python 3.13, uv, hatchling, src layout.
-Dual-mode: Bot API (httpx) + MTProto (Telethon). 7 tools: message, chat, media, contact, config, help, config__open_relay.
+MCP server for Telegram. Python 3.13, uv, hatchling, src layout. Built on
+[hull](https://github.com/n24q02m/hull) (`n24q02m-hull`, imported as
+`hull_core`) and standalone FastMCP 3.
+
+Dual mode: Bot API (httpx) and MTProto user accounts (Telethon).
+6 tools: `message`, `chat`, `media`, `contact`, `config`, `help`.
 
 ## Commands
 
@@ -10,134 +14,156 @@ uv sync --group dev          # Setup
 uv run ruff check .          # Lint
 uv run ruff format --check . # Format check
 uv run ty check              # Type check
-uv run pytest                # Test (integration excluded)
+uv run pytest                # Tests (integration/live/full/e2e markers excluded)
+uv run pytest --cov --cov-report=term-missing -q   # Coverage (gate: 95%)
 uv run ruff check --fix . && uv run ruff format .  # Fix
 ```
 
-## Cau truc
+## Source layout
 
 ```
 src/telegram/
-  config.py            # Pydantic Settings, env prefix TELEGRAM_
-  server.py            # FastMCP + lifespan + auth mode switching
-  credential_state.py  # save_credentials/on_step_submitted callbacks +
-                       # _current_sub contextvar (multi-user routing)
+  cli.py               # hull build_cli: auth / login / logout + hull built-ins
+  server.py            # FastMCP("telegram") + lifespan + 6 tools + main()
+  config.py            # Pydantic Settings (env prefix TELEGRAM_), data dir
+                       # move, pre-hull .secret quarantine
+  credential_state.py  # PerPluginStore("telegram") config per namespace +
+                       # one-time legacy config.enc migration
+  sessions.py          # SERVER_NAME, credential field names, saved-session check
+  errors.py            # redact_bot_token, error sanitization, 2FA detection
+  security.py          # XPIA boundary tags for external Telegram content
+  resources.py         # telegram://docs/* resources
   auth/
-    telegram_auth_provider.py  # Per-sub Telethon backend lifecycle
-    in_memory_session_store.py # bearer/sub -> SessionInfo (RAM only)
+    telegram_auth_provider.py  # Per-namespace backends for hull `multi` mode
   backends/            # TelegramBackend ABC -> BotBackend (httpx), UserBackend (Telethon)
   backends/security.py # validate_url, validate_file_path, validate_output_dir
-  relay_setup.py       # Shared error sanitization, field constants
-  relay_schema.py      # Relay schema + TELEGRAM_TABS layout + render_telegram_form
-                       # (Bot/User tabs drawn by mcp-core render_credential_form)
   transports/
-    http.py            # _start_single_user_http + _start_multi_user_http
-                       # (both via mcp-core run_http_server)
-    credential_store.py# Master-secret resolution helper
-  tools/               # messages, chats, media, contacts, config_tool, help
+    http.py            # start_http: hull run_http_server + ~/.telegram/config.toml
+  tools/               # messages, chats, media, contacts, config_tool, help_tool
 ```
 
-## Auth flow
+## Transports and auth modes
 
-Stdio mode (default): local single-user mode. Bot mode uses
-`TELEGRAM_BOT_TOKEN`; user mode can be configured with the local `auth` CLI
-(`login` is a deprecated alias).
+Stdio is the default (`mcp.run(transport="stdio")`). Without credentials the
+stdio server prints the `telegram auth` hint to stderr and exits 1 before any
+MCP output.
 
-HTTP mode (`--http` / `MCP_TRANSPORT=http`): mcp-core `run_http_server`
-serves the local OAuth AS at `/authorize`. The custom credential form
-collects bot_token OR phone, posts to `/save`, and chains OTP / 2FA via
-`/otp`.
+HTTP is opted into with `--http`, `MCP_TRANSPORT=http` or
+`TRANSPORT_MODE=http`. Settings come from `~/.telegram/config.toml`:
 
-- **Single-user**: writes to `config.enc`, hot-reloads the global Telethon
-  backend in `server.py`.
-- **Multi-user remote** (`PUBLIC_URL` + `MCP_DCR_SERVER_SECRET` set; legacy
-  `DCR_SERVER_SECRET` still accepted): per-sub
-  Telethon backends managed by `TelegramAuthProvider`; the auth_scope
-  middleware (`_per_request_sub_scope`) pins the JWT sub + per-user
-  backend into contextvars before each MCP tool call.
+```toml
+[server]
+host = "127.0.0.1"   # default; --host overrides
+port = 8000          # default; --port overrides
+auth = "token"       # "no-auth" | "token" | "multi"
+token_hash = "scrypt$..."   # token mode: output of `telegram token hash`
+# users_file = "users.toml" # multi mode; defaults to ~/.telegram/users.toml
+# rpm = 60                  # optional per-client rate limit
+```
 
-Session persist: `~/.telegram/<name>.session`, permission 600 (moved once from the pre-rename `~/.better-telegram-mcp/` by `config.resolve_default_data_dir()`; `~/.telegram-mcp` written by mcp-core `PerPluginStore` is a separate dir, unchanged).
+- `no-auth`: loopback binds only; a non-loopback host is refused (exit 2).
+- `token`: one bearer token, compared against `token_hash`.
+- `multi`: per-user bearer tokens from `users.toml`; each user maps to a
+  storage namespace. Users are administered host-side by editing the file
+  and restarting:
+
+  ```toml
+  [users.alice]
+  token_hash = "scrypt$..."
+  enabled = true
+  namespace = "alice"
+  ```
+
+hull serves MCP at `/mcp` and a public `GET /health`. An invalid
+`config.toml` / `users.toml` prints one line to stderr and exits 2.
+
+There is no browser setup form, OAuth server, relay or hosted endpoint.
+Credentials only come from env vars or the local CLI.
+
+## Storage
+
+- Credentials: hull `PerPluginStore("telegram")`, encrypted with the machine
+  key `~/.telegram/.secret`.
+  - `default` namespace (stdio, `no-auth`, `token`): `~/.telegram/config.json`.
+  - Other namespaces (`multi`): `~/.telegram/subs/<ns>/config.json`.
+- Telethon sessions: `~/.telegram/<session_name>.session` (default namespace)
+  and `~/.telegram/subs/<ns>/<session_name>.session`, permission 600.
+- Migrations, run once:
+  - `~/.better-telegram-mcp/` is renamed to `~/.telegram/`.
+  - The pre-hull shared `config.enc` entry (`better-telegram-mcp`) moves into
+    the default namespace on first read; only that entry is removed.
+  - A pre-hull `~/.telegram/.secret` that is not a 32-byte hull key is renamed
+    to `.secret.legacy-credential-store` (never read or deleted).
+
+The default-namespace backend is created at startup, so run `telegram auth`
+before starting the server (or restart after). Other namespaces connect on
+their first tool call.
+
+## CLI
+
+```bash
+telegram                                  # start the server (stdio)
+telegram --http [--host H] [--port P]     # start the HTTP server
+telegram auth --bot-token <token> [--user <ns>]
+telegram auth --phone <+number> [--user <ns>]   # interactive OTP / 2FA
+telegram login ...                        # deprecated alias of auth
+telegram logout [--yes] [--user <ns>]     # revoke session, delete credentials
+telegram config status | config delete --yes
+telegram status
+telegram doctor
+telegram token hash                       # reads the token from stdin / prompt
+```
+
+`--user` selects the hull namespace (default `default`). Unknown subcommands
+and argument errors exit 2.
 
 ## Env vars
 
-- `TELEGRAM_BOT_TOKEN` -- bot mode
-- `TELEGRAM_API_ID` + `TELEGRAM_API_HASH` -- user mode (built-in defaults, override optional)
-- `TELEGRAM_PHONE` -- phone for local auth or the HTTP relay form
+- `TELEGRAM_BOT_TOKEN` -- bot mode (wins over saved credentials)
+- `TELEGRAM_PHONE` -- user mode phone
+- `TELEGRAM_API_ID` + `TELEGRAM_API_HASH` -- optional; bundled public defaults
+- `USE_BUNDLED_TELEGRAM_CLIENT` -- set false to require your own API pair
 - `TELEGRAM_SESSION_NAME`, `TELEGRAM_DATA_DIR` -- optional
-- `MCP_TRANSPORT` / `TRANSPORT_MODE` -- set to `http` to opt into HTTP mode (default wire transport is stdio); `--http` CLI flag does the same
-- `PUBLIC_URL` -- deployed hostname; presence flips on the multi-user OAuth branch (with the DCR secret + api_id/api_hash)
-- `MCP_DCR_SERVER_SECRET` -- multi-user remote OAuth shared secret (with `PUBLIC_URL`); legacy `DCR_SERVER_SECRET` still accepted
+- `MCP_TRANSPORT` / `TRANSPORT_MODE` -- `http` selects HTTP
 
-No `TELEGRAM_AUTH_URL` -- auth is not configured through a URL environment
-variable. HTTP user setup is served by mcp-core's OAuth AS and relay form,
-locally or under `PUBLIC_URL`; local single-user setup uses the `auth` CLI.
+There is no `TELEGRAM_PASSWORD`: 2FA is prompted by `telegram auth` and never
+stored in the environment.
 
-NO `TELEGRAM_PASSWORD` -- HTTP relay 2FA nhap qua web UI; local CLI auth prompts interactively, KHONG luu env.
+## Notes
 
-## Release & Deploy
+- Config tool actions: `status`, `set`, `cache_clear`.
+- `message`, `chat`, `media` and `contact` results carry XPIA boundary tags in
+  the text block and envelope markers in `structuredContent`.
+- Bot tokens never reach logs: httpx logs at WARNING and `redact_bot_token`
+  scrubs error text.
+- Security: SSRF protection, path traversal prevention, error sanitization.
 
-- Conventional Commits. Tag format: `v{version}`
-- CD: PSR v10 -> PyPI `n24q02m-telegram` (uv publish) -> Docker multi-arch (amd64 + arm64) -> MCP Registry
-- Docker images: `n24q02m/telegram` (Docker Hub) + `ghcr.io/n24q02m/telegram`
+## Release
+
+- Conventional Commits (`fix:` / `feat:`). Tag format: `v{version}`.
+- CD: semantic release -> PyPI `n24q02m-telegram` -> Docker multi-arch
+  (`n24q02m/telegram`, `ghcr.io/n24q02m/telegram`) -> MCP Registry.
+- `n24q02m-hull` is pinned to a git commit until it is published to PyPI;
+  replace it with a version range before the next PyPI release.
 
 ## Pre-commit hooks
 
 1. Ruff lint (`--fix`) + format
 2. ty type check
 3. pytest (`--tb=short -q`)
-4. Commit message: enforce Conventional Commits
-
-## Luu y
-
-- Config tool: `status|set|cache_clear|setup_*` (HTTP user auth lives in mcp-core's OAuth AS; local single-user auth uses the `auth` CLI)
-- Security: SSRF, path traversal, error sanitization, rate limiting on relay
-- Secrets: skret SSM namespace `/better-telegram-mcp/prod` (region `ap-southeast-1`)
-
-## Known bugs
-
-(All 2026-04-18 E2E findings have been resolved. Section retained as a
-short audit trail with the fix commit so future investigators do not
-re-open closed issues.)
-
-1. **Bot token leak via httpx INFO logs** -- RESOLVED. `server.py:24` sets
-   `logging.getLogger("httpx").setLevel(logging.WARNING)` so request URLs
-   (which include the bot token) never reach stderr at INFO level.
-
-2. **User mode OTP/2FA multi-step flow** -- RESOLVED. mcp-core's shared
-   credential form (schema-level `tabs`, mcp-core >=1.20.0b1) renders the
-   Bot/User tabs; its `showStepInput` JS handles
-   `next_step.type === "otp_required"` + `password_required`. Wired into
-   mcp-core's local OAuth AS via `run_http_server(...,
-   custom_credential_form_html=render_telegram_form,
-   on_step_submitted=on_step_submitted)` — `render_telegram_form`
-   (`relay_schema.py`) declares `TELEGRAM_TABS` + the `initial_tab` hint and
-   delegates rendering to `render_credential_form`. After phone submit, the
-   same page re-renders the OTP input, posts to `/otp`, and chains to the 2FA
-   password step if Telethon reports it. The forked `credential_form.py` was
-   dropped once the tabs capability landed in mcp-core.
-
-3. **Setup-complete UI redirect** -- RESOLVED via mcp-core
-   `feedback_relay_form_must_follow_redirect.md` fix; the form follows
-   `redirect_url` instead of showing a static "close tab" page.
+4. Commit message: Conventional Commits
 
 ## E2E
 
-Driven by `mcp-core/scripts/e2e/` (matrix-locked, 15 configs). Run a single config from this repo via `make e2e` (proxy) or directly:
+Protocol tests live in this repo and drive the server over the MCP wire
+protocol (`ClientSession` + `stdio_client`):
 
-```
-cd ../mcp-core && uv run --project scripts/e2e python -m e2e.driver <config-id>
-```
-
-Configs for this repo: `telegram-bot`, `telegram-user`.
-
-``telegram-user`` is t2-interaction (browser-form OTP + 2FA, 600s timeout).
-
-Tier policy:
-
-- **T0** (precommit + CI on PR / main push) - runs without upstream identity. Skret keys not required.
-- **T2 non-interaction** (`make e2e-config CONFIG=<id>` locally) - driver pre-fills relay form from skret AWS SSM `/better-telegram-mcp/prod` (`ap-southeast-1`). No user gate.
-- **T2 interaction** - driver fills relay form, then prints upstream user-gate URL; user signs in / types OTP at provider. Driver enforces per-flow timeouts (device-code 900s, oauth-redirect 300s, browser-form 600s) and emits `[poll] elapsed=Xs remaining=Ys status=<body>` every 30s. On timeout, container logs + last `setup-status` are saved to `<tmp>/e2e-diag/` BEFORE teardown for post-mortem.
-
-Multi-user remote mode (deployment property; not a separate config) requires `MCP_DCR_SERVER_SECRET` (legacy `DCR_SERVER_SECRET` still accepted) in the same skret namespace - driver refuses to start the container without it when `PUBLIC_URL` is set.
-
-References: `mcp-core/scripts/e2e/matrix.yaml`, `~/.claude/skills/mcp-dev/references/e2e-full-matrix.md` (harness-readiness gate), `~/.claude/skills/mcp-dev/references/secrets-skret.md` (per-server credential layout), `~/.claude/skills/mcp-dev/references/multi-user-pattern.md` (per-JWT-sub isolation).
+- `tests/test_stdio_direct.py` -- default run. Spawns the CLI through
+  `tests/stdio_bootstrap.py` (isolated home and legacy config path, Bot API
+  connect stubbed): credential gate, `initialize`, `tools/list`, `help`.
+- `tests/test_transports/test_http.py` -- HTTP loopback: wrong token 401,
+  right token, public `/health`, `no-auth` + `0.0.0.0` refused, multi
+  namespaces.
+- `tests/test_live_protocol.py` (`-m live`) and `tests/test_e2e.py`
+  (`-m e2e`) -- real Telegram; need `TELEGRAM_BOT_TOKEN` or a user session
+  authorized with `telegram auth`.
