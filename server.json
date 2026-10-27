@@ -7,12 +7,12 @@
     "url": "https://github.com/n24q02m/telegram.git",
     "source": "github"
   },
-  "version": "4.22.0",
+  "version": "4.23.0-beta.1",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "n24q02m-telegram",
-      "version": "4.22.0",
+      "version": "4.23.0-beta.1",
       "runtimeHint": "uvx",
       "runtimeArgs": [
         "--python",

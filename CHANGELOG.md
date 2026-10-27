@@ -2,6 +2,59 @@
 
 <!-- version list -->
 
+## v4.23.0-beta.1 (2026-10-27)
+
+### Bug Fixes
+
+- Align registry and plugin metadata with renamed identity
+  ([#1114](https://github.com/n24q02m/telegram/pull/1114),
+  [`5b96bcc`](https://github.com/n24q02m/telegram/commit/5b96bcc23d8c251e398144ebbf3839fb73a0bf18))
+
+- Bind PyPI trusted publishing to named environments
+  ([#1119](https://github.com/n24q02m/telegram/pull/1119),
+  [`db951a3`](https://github.com/n24q02m/telegram/commit/db951a3764340b29226bdd3a207233b5787578cf))
+
+- Migrate renovate config off deprecated options
+  ([#1110](https://github.com/n24q02m/telegram/pull/1110),
+  [`5b56fe8`](https://github.com/n24q02m/telegram/commit/5b56fe871f347ff773f70aaeaf0eac1ed77feb28))
+
+- Point homepage at docs.n24q02m.com/servers/telegram/
+  ([#1115](https://github.com/n24q02m/telegram/pull/1115),
+  [`c79380b`](https://github.com/n24q02m/telegram/commit/c79380b432995235141fcb23a05a5362165952cd))
+
+- Probe saved sessions in the data dir the server actually uses
+  ([#1116](https://github.com/n24q02m/telegram/pull/1116),
+  [`3f2b389`](https://github.com/n24q02m/telegram/commit/3f2b389fc4d3f0c51d297dde3531825fb150f6b1))
+
+- **deps**: Bump pyjwt to 2.15.0 and virtualenv to 21.7.13
+  ([#1107](https://github.com/n24q02m/telegram/pull/1107),
+  [`cf54237`](https://github.com/n24q02m/telegram/commit/cf5423701b5868990d29e3b87be7dbeb2f960100))
+
+- **deps**: Bump the uv group across 1 directory with 2 updates
+  ([#1120](https://github.com/n24q02m/telegram/pull/1120),
+  [`1942026`](https://github.com/n24q02m/telegram/commit/194202684b910fc7fb0bf92e40f43c64a520c4ea))
+
+- **deps**: Bump virtualenv ([#1118](https://github.com/n24q02m/telegram/pull/1118),
+  [`abc055d`](https://github.com/n24q02m/telegram/commit/abc055d519d7f7512767e506d81454f26dc83171))
+
+### Features
+
+- Make cd dispatch-only and add renovate minimum release age
+  ([#1108](https://github.com/n24q02m/telegram/pull/1108),
+  [`55c4e4d`](https://github.com/n24q02m/telegram/commit/55c4e4dd4d1a571d49a222a1af89773e36a7c362))
+
+- Move telegram from mcp-core to hull core-py
+  ([#1117](https://github.com/n24q02m/telegram/pull/1117),
+  [`8cd0b6e`](https://github.com/n24q02m/telegram/commit/8cd0b6e0e867f99daa08b8a6ded7888671053cee))
+
+- Remove cloudflare worker hosting surface ([#1113](https://github.com/n24q02m/telegram/pull/1113),
+  [`6fcba3d`](https://github.com/n24q02m/telegram/commit/6fcba3d0c1faafcb71b07396704a3243a22626ed))
+
+- Rename identity to telegram (PyPI n24q02m-telegram, image n24q02m/telegram)
+  ([#1111](https://github.com/n24q02m/telegram/pull/1111),
+  [`e1c5423`](https://github.com/n24q02m/telegram/commit/e1c54235430c98bc55d3ebb8c5668163d4075650))
+
+
 ## v4.22.0 (2026-09-13)
 
 ### Bug Fixes
