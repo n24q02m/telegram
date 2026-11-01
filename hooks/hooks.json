@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "mcp__plugin_better-telegram-mcp_better-telegram-mcp__",
+        "matcher": "mcp__plugin_telegram_telegram__",
         "hooks": [
           {
             "type": "command",
