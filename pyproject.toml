@@ -46,7 +46,7 @@ dev = [
     "pytest-xdist>=3.8.0",
     "ruff>=0.16.6",
     "ty>=0.0.91",
-    "pre-commit>=4.6.2",
+    "pre-commit>=4.7.0",
 ]
 [project.scripts]
 telegram = "telegram.cli:main"
