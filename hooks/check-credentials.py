@@ -16,6 +16,7 @@ sys.path.append(
 try:
     from mcp_common import read_mcp_hook_input
 except ImportError:
+
     def read_mcp_hook_input() -> dict:
         data = None
         try:
@@ -33,6 +34,7 @@ except ImportError:
             )
             sys.exit(2)
         return data
+
 
 SERVER_NAME = "better-telegram-mcp"
 # Either TELEGRAM_PHONE (user mode) or TELEGRAM_BOT_TOKEN (bot mode) is required.

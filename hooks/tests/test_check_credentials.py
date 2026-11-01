@@ -1,9 +1,9 @@
+import importlib.util
+import io
+import json
+import os
 import unittest
 from unittest.mock import patch
-import json
-import io
-import os
-import importlib.util
 
 # Load the hook module
 hook_path = os.path.abspath(
@@ -15,7 +15,6 @@ spec.loader.exec_module(check_credentials)
 
 
 class TestCheckCredentials(unittest.TestCase):
-
     @patch.dict(os.environ, {"TELEGRAM_PHONE": "123456789"}, clear=True)
     def test_is_configured_phone(self):
         self.assertTrue(check_credentials._is_configured())
