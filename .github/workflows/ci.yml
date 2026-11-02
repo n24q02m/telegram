@@ -163,7 +163,7 @@ jobs:
           SMTP_CREDENTIAL: ${{ secrets.SMTP_CREDENTIAL }}
 
       - name: Send email notification
-        uses: dawidd6/action-send-mail@ca8dbb4d4f91ca7f75e7f2feea5339e76ce70c90 # v20
+        uses: dawidd6/action-send-mail@47af4a10b540781705f283a2cf1a9650713ac795 # v23
         with:
           server_address: smtp.gmail.com
           server_port: 587
