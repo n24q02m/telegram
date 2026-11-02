@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import functools
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -175,7 +175,7 @@ async def _shutdown_provider() -> None:
 
 
 @asynccontextmanager
-async def _lifespan(server: FastMCP) -> AsyncIterator[None]:
+async def _lifespan(server: FastMCP) -> AsyncGenerator[None]:
     global _backend, _settings, _pending_auth, _unconfigured
     _settings = _ensure_settings()
 
