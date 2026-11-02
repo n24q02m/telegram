@@ -28,7 +28,7 @@ dependencies = [
     "n24q02m-hull>=0.4.0,<0.5",
     "httpx>=0.28.1",
     "telethon>=1.44.0",
-    "pydantic>=2.13.5,<2.14",
+    "pydantic>=2.14.1,<2.15",
     # 2.15 warns while constructing MCP SDK Settings; lift after upstream rebuilds its model.
     "pydantic-settings>=2.14.2,<2.15",
     "loguru>=0.7.3",
