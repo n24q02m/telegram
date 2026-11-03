@@ -713,7 +713,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pytest-timeout", specifier = ">=2.4.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "ruff", specifier = ">=0.17.2" },
+    { name = "ruff", specifier = ">=0.17.3" },
     { name = "ty", specifier = ">=0.0.92" },
 ]
 
