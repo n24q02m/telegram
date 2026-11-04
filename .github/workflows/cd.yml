@@ -77,7 +77,7 @@ jobs:
       # BEFORE the real run creates a git tag or GitHub Release. Same action + SHA and
       # same prerelease inputs as the real step, run against the same untouched checkout,
       # so the computed version is identical.
-      - uses: n24q02m/better-semantic-release@0e57c64481cb78492ad1ff8025b0cd368dbb695f # v1.13.0
+      - uses: n24q02m/better-semantic-release@0cc137a9f9254fb4163d727c20026cb81a5a6880 # v1.13.1
         id: dryrun
         with:
           github_token: ${{ steps.app-token.outputs.token }}
@@ -144,7 +144,7 @@ jobs:
           echo "::error::Could not verify whether ${PKG} ${COMPUTED_VERSION} exists on PyPI: ${URL} returned HTTP '${status:-<no response>}' (expected 200 or 404). Refusing to proceed so a genuine collision cannot slip through as a false 'free'. Re-run the release once the registry is reachable."
           exit 1
 
-      - uses: n24q02m/better-semantic-release@0e57c64481cb78492ad1ff8025b0cd368dbb695f # v1.13.0
+      - uses: n24q02m/better-semantic-release@0cc137a9f9254fb4163d727c20026cb81a5a6880 # v1.13.1
         id: release
         with:
           github_token: ${{ steps.app-token.outputs.token }}
@@ -175,7 +175,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release.outputs.tag }}
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - run: uv build
       - name: Publish to PyPI
         run: uv publish
@@ -211,7 +211,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release.outputs.tag }}
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - name: Rewrite project name back to better-telegram-mcp with rename note
         run: |
