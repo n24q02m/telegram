@@ -693,7 +693,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "n24q02m-hull", specifier = ">=0.4.0,<0.5" },
-    { name = "pydantic", specifier = ">=2.14.1,<2.15" },
+    { name = "pydantic", specifier = ">=2.14.2,<2.15" },
     { name = "pydantic-settings", specifier = ">=2.14.2,<2.15" },
     { name = "starlette", specifier = ">=1.10.0" },
     { name = "telethon", specifier = ">=1.45.0" },
@@ -709,7 +709,7 @@ dev = [
     { name = "pytest-timeout", specifier = ">=2.4.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "ruff", specifier = ">=0.17.3" },
-    { name = "ty", specifier = ">=0.0.94" },
+    { name = "ty", specifier = ">=0.0.95" },
 ]
 
 [[package]]
