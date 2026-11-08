@@ -89,7 +89,7 @@ quote-style = "double"
 [tool.ty.environment]
 python-version = "3.13"
 [tool.ty.rules]
-unresolved-import = "ignore"
+import-not-found = "ignore"
 possibly-unresolved-reference = "ignore"
 unresolved-attribute = "ignore"
 invalid-return-type = "ignore"
