@@ -689,7 +689,7 @@ dev = [
 requires-dist = [
     { name = "cryptg", specifier = ">=0.6.0" },
     { name = "cryptography", specifier = ">=50.0.2" },
-    { name = "fastmcp", specifier = ">=4.1.4,<5" },
+    { name = "fastmcp", specifier = ">=4.1.5,<5" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "n24q02m-hull", specifier = ">=0.4.0,<0.5" },
