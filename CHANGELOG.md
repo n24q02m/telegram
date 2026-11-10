@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v4.24.0-beta.2 (2026-11-10)
+
+### Bug Fixes
+
+- Allow the hull 0.5 release line ([#1160](https://github.com/n24q02m/telegram/pull/1160),
+  [`5cc9257`](https://github.com/n24q02m/telegram/commit/5cc925744ba7a1348dbae8125703e5eb1a7c37a9))
+
+- **deps**: Lock file maintenance ([#1159](https://github.com/n24q02m/telegram/pull/1159),
+  [`b7cca5a`](https://github.com/n24q02m/telegram/commit/b7cca5a36976f73d6053cccad91cb8b0f2bffcef))
+
+
 ## v4.24.0-beta.1 (2026-11-10)
 
 ### Bug Fixes
