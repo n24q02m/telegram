@@ -10,6 +10,7 @@ hook_path = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "check-credentials.py")
 )
 spec = importlib.util.spec_from_file_location("check_credentials", hook_path)
+assert spec is not None and spec.loader is not None
 check_credentials = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(check_credentials)
 

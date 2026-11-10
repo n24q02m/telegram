@@ -189,6 +189,7 @@ def test_foreign_secret_without_quarantine_breaks_hull():
 def test_plugin_store_returns_namespaced_store():
     store = plugin_store("config", "a")
     store.save({"TELEGRAM_PHONE": "+10000000000"})
+    assert store.cred_path is not None
     assert store.cred_path.parts[-3:-1] == ("subs", "a")
 
 

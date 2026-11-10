@@ -73,7 +73,7 @@ async def test_save_on_change_flushes_to_backend(monkeypatch, tmp_path):
     backend = UserBackend(_settings(tmp_path), backend=mem)
     await backend.connect()
     # Simulate a Telethon-internal rewrite (DC migration / key rotation).
-    backend._client.session.save()
+    backend._client.session.save()  # ty: ignore[missing-union-attribute]
     assert mem.get("telegram/subs/deadbeefdeadbeef/session") is not None
 
 
