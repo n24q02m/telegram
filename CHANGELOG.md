@@ -2,6 +2,143 @@
 
 <!-- version list -->
 
+## v4.24.0-beta.1 (2026-11-10)
+
+### Bug Fixes
+
+- Add root hooks and clean up residue artifacts
+  ([`916f8e3`](https://github.com/n24q02m/telegram/commit/916f8e3a7ed3bd1752d2e7d4b696896cc23594c7))
+
+- Annotate _lifespan as AsyncGenerator for ty
+  ([`6f8bd46`](https://github.com/n24q02m/telegram/commit/6f8bd46055467fd47124d803ad91a53d5d9f713f))
+
+- Assert hooks.json points at the shipped credential hook
+  ([#1151](https://github.com/n24q02m/telegram/pull/1151),
+  [`7d2546a`](https://github.com/n24q02m/telegram/commit/7d2546a42cdb3c85694165e24f48b042e17b8664))
+
+- Match credential hook to the real plugin tool prefix
+  ([#1123](https://github.com/n24q02m/telegram/pull/1123),
+  [`26b7acd`](https://github.com/n24q02m/telegram/commit/26b7acd2088f153f5580bab1a0e7f3215c219305))
+
+- Move discarded agent notes into docs/engineering-lessons.md
+  ([#1153](https://github.com/n24q02m/telegram/pull/1153),
+  [`a488689`](https://github.com/n24q02m/telegram/commit/a488689fdf8366db3097b7e6139ff672bb5d3742))
+
+- Name the telegram command in cli output ([#1158](https://github.com/n24q02m/telegram/pull/1158),
+  [`fb02148`](https://github.com/n24q02m/telegram/commit/fb02148a34d0d4a1241785c0a998b551abd43c49))
+
+- Publish the final better-telegram-mcp stub from the release workflow
+  ([#1148](https://github.com/n24q02m/telegram/pull/1148),
+  [`50fcb7c`](https://github.com/n24q02m/telegram/commit/50fcb7c705fb7ac4bdaa32b87af0ba55d1efa24a))
+
+- Remove the email notification and bot governance workflows
+  ([#1142](https://github.com/n24q02m/telegram/pull/1142),
+  [`60da03e`](https://github.com/n24q02m/telegram/commit/60da03e4047d67722711807e19c9219bdab3d321))
+
+- Rename the ty rule unresolved-import to import-not-found
+  ([#1143](https://github.com/n24q02m/telegram/pull/1143),
+  [`cab440e`](https://github.com/n24q02m/telegram/commit/cab440eb7313740d3513280534ae90df572969dc))
+
+- Rename the ty rules that 0.0.100 renamed ([#1151](https://github.com/n24q02m/telegram/pull/1151),
+  [`7d2546a`](https://github.com/n24q02m/telegram/commit/7d2546a42cdb3c85694165e24f48b042e17b8664))
+
+- Run the credential hook tests in ci ([#1152](https://github.com/n24q02m/telegram/pull/1152),
+  [`1692fe6`](https://github.com/n24q02m/telegram/commit/1692fe6449bf4d3326508f4b628967af08090b30))
+
+- Satisfy the ty type gate that ty 0.0.100 tightened
+  ([#1151](https://github.com/n24q02m/telegram/pull/1151),
+  [`7d2546a`](https://github.com/n24q02m/telegram/commit/7d2546a42cdb3c85694165e24f48b042e17b8664))
+
+- Sort imports and format root hooks to satisfy ruff check and format
+  ([#1122](https://github.com/n24q02m/telegram/pull/1122),
+  [`b9d04de`](https://github.com/n24q02m/telegram/commit/b9d04dee9ecb5cf3c5078dc588f8747ea471089b))
+
+- State the current version in the handover ([#1155](https://github.com/n24q02m/telegram/pull/1155),
+  [`e01719a`](https://github.com/n24q02m/telegram/commit/e01719af05e12e317b3c294c448c8c0992cadb4f))
+
+- State the hull source range in the handover
+  ([#1156](https://github.com/n24q02m/telegram/pull/1156),
+  [`443fbdf`](https://github.com/n24q02m/telegram/commit/443fbdf5680fe6c108dfcaa85ba98b94e852f0a1))
+
+- **deps**: Bump the uv group across 1 directory with 4 updates
+  ([#1121](https://github.com/n24q02m/telegram/pull/1121),
+  [`9ed352b`](https://github.com/n24q02m/telegram/commit/9ed352b008a0c35f65d8998f18fec5425f1bce7f))
+
+- **deps**: Lock file maintenance ([#1157](https://github.com/n24q02m/telegram/pull/1157),
+  [`63dbf33`](https://github.com/n24q02m/telegram/commit/63dbf33efd14490d9f128170c6d2b6b595c2f96f))
+
+- **deps**: Lock file maintenance ([#1150](https://github.com/n24q02m/telegram/pull/1150),
+  [`ad120d0`](https://github.com/n24q02m/telegram/commit/ad120d07b872f4c6963b1a825a51e1a125450334))
+
+- **deps**: Lock file maintenance ([#1147](https://github.com/n24q02m/telegram/pull/1147),
+  [`7334c15`](https://github.com/n24q02m/telegram/commit/7334c15e4f952b2507253f295a3aa66e73333aff))
+
+- **deps**: Lock file maintenance ([#1144](https://github.com/n24q02m/telegram/pull/1144),
+  [`fe5f94b`](https://github.com/n24q02m/telegram/commit/fe5f94bb620fc18a1d4320c900ee57a2788317ce))
+
+- **deps**: Lock file maintenance ([#1140](https://github.com/n24q02m/telegram/pull/1140),
+  [`66e98d7`](https://github.com/n24q02m/telegram/commit/66e98d797d1647cff3e7c5a183282faf76fc7d2c))
+
+- **deps**: Lock file maintenance ([#1139](https://github.com/n24q02m/telegram/pull/1139),
+  [`bca61fe`](https://github.com/n24q02m/telegram/commit/bca61fe67d9ac4cff815c6ef24beae39fa0716aa))
+
+- **deps**: Lock file maintenance ([#1137](https://github.com/n24q02m/telegram/pull/1137),
+  [`d9acf1d`](https://github.com/n24q02m/telegram/commit/d9acf1d78d60e9a28e02058a58683b9438f34a57))
+
+- **deps**: Lock file maintenance ([#1134](https://github.com/n24q02m/telegram/pull/1134),
+  [`d697c6f`](https://github.com/n24q02m/telegram/commit/d697c6fdbfc17e6ff67864b95e2182ac5c8383df))
+
+- **deps**: Lock file maintenance ([#1132](https://github.com/n24q02m/telegram/pull/1132),
+  [`e83e5b8`](https://github.com/n24q02m/telegram/commit/e83e5b898cf49d360313fdb5d094ba7ac1a417fb))
+
+- **deps**: Lock file maintenance ([#1129](https://github.com/n24q02m/telegram/pull/1129),
+  [`a5f415b`](https://github.com/n24q02m/telegram/commit/a5f415be9362e67d8f8b7faaac6f5f0347a31367))
+
+- **deps**: Update cryptography to >=50.0.2 ([#1127](https://github.com/n24q02m/telegram/pull/1127),
+  [`eb14ae3`](https://github.com/n24q02m/telegram/commit/eb14ae3b91e47b0bbf11b01fe05f3a93f658fad3))
+
+- **deps**: Update dawidd6/action-send-mail action to v23
+  ([#1128](https://github.com/n24q02m/telegram/pull/1128),
+  [`625bc2c`](https://github.com/n24q02m/telegram/commit/625bc2c88d0b4d0056a1c821dac9d5278c493200))
+
+- **deps**: Update fastmcp to >=4.1.5,<5 ([#1146](https://github.com/n24q02m/telegram/pull/1146),
+  [`b6d7bdd`](https://github.com/n24q02m/telegram/commit/b6d7bddd9cbdc5fe560cf3c9eca75a8fc5123286))
+
+- **deps**: Update minor dependencies ([#1125](https://github.com/n24q02m/telegram/pull/1125),
+  [`7c3ae35`](https://github.com/n24q02m/telegram/commit/7c3ae350e95c01a5ac7b91a2ed9c4e833cabf144))
+
+- **deps**: Update non-major dev dependencies
+  ([#1126](https://github.com/n24q02m/telegram/pull/1126),
+  [`0fd6a2b`](https://github.com/n24q02m/telegram/commit/0fd6a2b31730e557330fdbd993f95540492b58ad))
+
+- **deps**: Update patch dependencies ([#1149](https://github.com/n24q02m/telegram/pull/1149),
+  [`f398f21`](https://github.com/n24q02m/telegram/commit/f398f21bf992c4ed746ea6a8cd066fc23ab9d853))
+
+- **deps**: Update patch dependencies ([#1138](https://github.com/n24q02m/telegram/pull/1138),
+  [`eeafd05`](https://github.com/n24q02m/telegram/commit/eeafd0560250aeda96d9bba0ed2a26c48656c65b))
+
+- **deps**: Update patch dependencies ([#1136](https://github.com/n24q02m/telegram/pull/1136),
+  [`611077b`](https://github.com/n24q02m/telegram/commit/611077bea189ec74523d73574acb892d30aa209e))
+
+- **deps**: Update patch dependencies ([#1133](https://github.com/n24q02m/telegram/pull/1133),
+  [`e6f4255`](https://github.com/n24q02m/telegram/commit/e6f425536470c44407e7a6745507722fd421b8b7))
+
+- **deps**: Update patch dependencies ([#1131](https://github.com/n24q02m/telegram/pull/1131),
+  [`52a12be`](https://github.com/n24q02m/telegram/commit/52a12be384fe85715253185e26c3792ee59c775c))
+
+- **deps**: Update patch dependencies ([#1124](https://github.com/n24q02m/telegram/pull/1124),
+  [`524e4fe`](https://github.com/n24q02m/telegram/commit/524e4fe3ee8d5ef2efe2b654f560fc4f17f2a53a))
+
+- **deps**: Update pytest-asyncio to >=1.4.1.post1
+  ([#1145](https://github.com/n24q02m/telegram/pull/1145),
+  [`4181cfd`](https://github.com/n24q02m/telegram/commit/4181cfd235656c692c5ac39cac8d0abb6c713b3d))
+
+### Features
+
+- Expose the mcp tools as cli commands ([#1154](https://github.com/n24q02m/telegram/pull/1154),
+  [`aa87797`](https://github.com/n24q02m/telegram/commit/aa877978be8a9713a62a75c8bc17609765df17db))
+
+
 ## v4.23.0 (2026-10-27)
 
 
