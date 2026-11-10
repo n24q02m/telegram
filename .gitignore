@@ -59,10 +59,6 @@ temp/
 *.session
 *.session-journal
 
-# AI Agent
-.jules/
-JULES.md
-
 # Code review knowledge graph
 .code-review-graph/
 
@@ -71,8 +67,6 @@ JULES.md
 
 docs/superpowers/
 # AI Assistant / Rules
-.jules/
-.jules
 .superpower/
 superpower/
 superpowers/
