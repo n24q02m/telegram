@@ -91,7 +91,7 @@ jobs:
         run: uv run --no-sync ty check
 
       - name: Run tests with coverage
-        run: uv run --no-sync pytest tests/ --cov=telegram --cov-report=xml --cov-fail-under=95
+        run: uv run --no-sync pytest tests/ hooks/tests/ --cov=telegram --cov-report=xml --cov-fail-under=95
 
       - name: Upload coverage to Codecov
         if: github.event_name == 'push' && matrix.os == 'ubuntu-latest'
