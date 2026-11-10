@@ -11,7 +11,7 @@ on:
           - beta
           - stable
       legacy_final_note:
-        description: "One-time: also publish the FINAL better-telegram-mcp release at the same version (rename note) before the old PyPI project freezes. Set true only on the first n24q02m-telegram release."
+        description: "One-time: also publish the FINAL better-telegram-mcp stub (legacy/better-telegram-mcp: rename note + legacy better-telegram-mcp command, depends on n24q02m-telegram) before the old PyPI project freezes. Set true only on the first n24q02m-telegram release."
         required: false
         type: boolean
         default: false
@@ -181,18 +181,21 @@ jobs:
         run: uv publish
 
   # ============================================================================
-  # One-time legacy final-note: publish the LAST better-telegram-mcp release at
-  # the same version as the first n24q02m-telegram release, with a rename note,
-  # then the old PyPI project freezes. Rebuilds the wheel/sdist under the old
-  # distribution name from the same tag (same `telegram` import package and the
-  # same console scripts, so `uvx better-telegram-mcp` keeps working; only the
-  # project name + description change). Gated by the legacy_final_note dispatch input so
-  # it runs exactly once. PyPI trusted publishing (OIDC) like publish-pypi: no
-  # token; the old project's trusted publisher must point at this repo with
-  # environment `pypi-legacy` before the dispatch.
+  # One-time legacy final-note: publish the LAST better-telegram-mcp release as a
+  # stub that only notes the rename to n24q02m-telegram, re-declares the legacy
+  # `better-telegram-mcp` command and depends on n24q02m-telegram, so the old
+  # PyPI project freezes at that stub. It lives in legacy/better-telegram-mcp at a
+  # version one patch above the last real better-telegram-mcp release
+  # (4.22.0 -> 4.22.1), so it can never overtake a real release and the shipped
+  # `telegram` import package is never rebuilt under the old name. Gated by the
+  # legacy_final_note dispatch input so it runs exactly once. PyPI trusted
+  # publishing (OIDC) like publish-pypi: no token. This repo publishes two PyPI
+  # projects from one workflow and one repo, so the old project's trusted
+  # publisher is bound to a separate environment, `pypi-legacy`, before the
+  # dispatch (that split is why this job cannot reuse `pypi`).
   # ============================================================================
   publish-pypi-legacy-final:
-    name: Publish better-telegram-mcp final rename note
+    name: Publish better-telegram-mcp final rename stub
     needs: release
     if: >-
       inputs.legacy_final_note
@@ -213,45 +216,52 @@ jobs:
           ref: ${{ needs.release.outputs.tag }}
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
-      - name: Rewrite project name back to better-telegram-mcp with rename note
+      - name: Build the legacy stub
+        run: uv build --out-dir dist-legacy legacy/better-telegram-mcp
+
+      # A PyPI version number can never be reused, so prove the artifact is the
+      # intended stub before uploading: legacy name, bumped version, inactive
+      # classifier, dependency on the renamed distribution, legacy console script.
+      - name: Verify the built artifact is the legacy stub
         run: |
+          ls dist-legacy
           python3 - <<'EOF'
+          import glob
           import pathlib
-          import re
+          import sys
           import tomllib
+          import zipfile
 
-          path = pathlib.Path("pyproject.toml")
-          text = path.read_text(encoding="utf-8")
-          project = tomllib.loads(text)["project"]
-          if project["name"] != "n24q02m-telegram":
-              raise SystemExit(f"expected renamed project, got {project['name']!r}")
-          note = (
-              " [FINAL release under this name: package renamed to"
-              " n24q02m-telegram -- migrate with: uvx n24q02m-telegram]"
-          )
-          text, n_name = re.subn(
-              r'(?m)^name = "n24q02m-telegram"$', 'name = "better-telegram-mcp"', text, count=1
-          )
-          text, n_desc = re.subn(
-              r'(?m)^(description = ".*)"$', lambda m: m.group(1) + note + '"', text, count=1
-          )
-          if n_name != 1 or n_desc != 1:
-              raise SystemExit(f"rewrite failed: name={n_name} description={n_desc}")
-          path.write_text(text, encoding="utf-8")
-          rewritten = tomllib.loads(text)["project"]
-          assert rewritten["name"] == "better-telegram-mcp", rewritten["name"]
-          assert rewritten["description"].endswith(note), rewritten["description"]
-          print("rewritten")
+          (stub_pyproject,) = pathlib.Path("legacy").glob("*/pyproject.toml")
+          project = tomllib.loads(stub_pyproject.read_text(encoding="utf-8"))["project"]
+          dist_key = project["name"].replace("-", "_")
+          dist_info = f"{dist_key}-{project['version']}.dist-info"
+          wheels = glob.glob(f"dist-legacy/{dist_key}-{project['version']}-*.whl")
+          if len(wheels) != 1:
+              sys.exit(f"expected exactly one wheel, got {wheels}")
+          with zipfile.ZipFile(wheels[0]) as wheel:
+              metadata = wheel.read(f"{dist_info}/METADATA").decode()
+              entry_points = wheel.read(f"{dist_info}/entry_points.txt").decode()
+
+          expected = [
+              f"Name: {project['name']}",
+              f"Version: {project['version']}",
+              "Classifier: Development Status :: 7 - Inactive",
+              *(f"Requires-Dist: {dep}" for dep in project["dependencies"]),
+          ]
+          missing = [line for line in expected if line not in metadata]
+          missing += [
+              f"{script} = "
+              for script in project["scripts"]
+              if f"{script} = " not in entry_points
+          ]
+          if missing:
+              sys.exit(f"legacy stub metadata mismatch: {missing}")
+          print(f"OK: {project['name']} {project['version']}")
           EOF
-          head -5 pyproject.toml
 
-      - run: uv build
-      - name: Verify the built distribution name
-        run: |
-          ls dist
-          ls dist/better_telegram_mcp-*.whl dist/better_telegram_mcp-*.tar.gz
-      - name: Publish final better-telegram-mcp to PyPI
-        run: uv publish
+      - name: Publish the final better-telegram-mcp stub to PyPI
+        run: uv publish dist-legacy/*
 
   # =================== Build Docker ===================
   build-docker:
