@@ -4,6 +4,8 @@
 
 Telegram MCP exposes Telegram messaging, chat, media, and contact operations through 6 MCP tools (`message`, `chat`, `media`, `contact`, `config`, `help`). It supports Bot API and MTProto user-account modes over local stdio, and an HTTP transport for self-hosted deployments.
 
+**Version: 4.23.0** -- `project.version` in `pyproject.toml`; the release tooling keeps `server.json` and `.claude-plugin/plugin.json` on the same value. Re-read `pyproject.toml` before relying on this line, because a release moves it.
+
 The server is built on hull (`n24q02m-hull`, imported as `hull_core`) and standalone FastMCP 3. hull provides the HTTP transport and bearer auth, the encrypted per-plugin credential store, and the shared CLI built-ins. There is no browser credential form, OAuth server, relay or hosted endpoint.
 
 The public contract is defined by the repository README, `server.json`, package metadata, and the documented MCP tools.
