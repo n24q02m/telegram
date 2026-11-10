@@ -25,7 +25,7 @@ dependencies = [
     # Standalone FastMCP: hull's HTTP transport mounts `FastMCP.http_app()`.
     # Range matches hull's own pin.
     "fastmcp>=4.1.6,<5",
-    "n24q02m-hull>=0.4.0,<0.5",
+    "n24q02m-hull>=0.5.0b1,<0.6",
     "httpx>=0.28.1",
     "telethon>=1.45.0",
     "pydantic>=2.14.2,<2.15",
