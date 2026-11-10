@@ -76,7 +76,7 @@ class TestUsage:
     def test_short_help_flag(self, capsys):
         rc, out, _ = _run(capsys, ["-h"])
         assert rc == 0
-        assert "usage: better-telegram-mcp" in out
+        assert "usage: telegram" in out
 
 
 # --- message group ---
