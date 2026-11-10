@@ -87,6 +87,6 @@ async def test_stdio_initialize_list_tools_and_call_help(tmp_path: Path) -> None
 
             result = await session.call_tool("help", {"topic": "messages"})
             assert not result.isError
-            text = result.content[0].text
+            text = result.content[0].text  # ty: ignore[missing-union-attribute]
             assert "message" in text.lower()
             assert FAKE_TOKEN not in text

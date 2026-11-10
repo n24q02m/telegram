@@ -382,7 +382,8 @@ class UserBackend(TelegramBackend):
     async def get_chat_info(self, chat_id: str | int) -> dict[str, Any]:
         client = self._ensure_client()
         entity = await client.get_entity(chat_id)
-        info: dict[str, Any] = {"id": entity.id}
+        # get_entity is typed to also return a list; a scalar chat_id never does.
+        info: dict[str, Any] = {"id": entity.id}  # ty: ignore[missing-union-attribute]
         if isinstance(entity, (Channel, Chat)):
             info["title"] = getattr(entity, "title", "")
             info["participants_count"] = getattr(entity, "participants_count", None)
@@ -438,7 +439,11 @@ class UserBackend(TelegramBackend):
             from telethon.tl.functions.messages import DeleteChatUserRequest
 
             me = await client.get_me()
-            await client(DeleteChatUserRequest(chat_id=entity.id, user_id=me.id))
+            chat_id_int: int = entity.id  # ty: ignore[missing-union-attribute]
+            user_id_int: int = me.id  # ty: ignore[missing-union-attribute]
+            await client(
+                DeleteChatUserRequest(chat_id=chat_id_int, user_id=user_id_int)
+            )
         return True
 
     async def get_members(
