@@ -34,6 +34,7 @@ Do not put credentials, OTPs, session files, or raw protocol transcripts in the 
 - Moved from mcp-core to hull: relay form, OAuth AS, pending-OTP store, in-memory session store and the `config__open_relay` tool were removed. Setup is local CLI only.
 - HTTP transport is a thin wrapper over hull `run_http_server`, configured by `~/.telegram/config.toml`.
 - The CLI uses hull `build_cli`: `auth`, `login` (deprecated alias), `logout` plus hull's `config`, `status`, `doctor`, `token hash`; `--user` selects the namespace.
+- CLI-first tool surface: every MCP tool is also a `<tool> <action>` CLI command (`message`, `chat`, `media`, `contact`, `settings`, `help`). Both surfaces call the same `telegram.tools.dispatch` entry (which builds the tool's own argument model and calls the handler); the CLI connects a backend for one call through `telegram.tool_session.connected_backend` instead of the server lifespan. The MCP `config` tool is the CLI `settings` group, because `config` is hull's operator command. Keep the two surfaces wired to the same dispatch function when a tool gains an argument.
 - Removed the Cloudflare Worker hosting surface earlier; self-hosting is Docker or the Python package.
 
 ## In-flight and release notes

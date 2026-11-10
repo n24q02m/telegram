@@ -239,7 +239,7 @@ async def test_lifespan_bot_mode(server_state):
     mock_bot = AsyncMock()
     mock_bot.is_authorized = AsyncMock(return_value=True)
     with (
-        patch.object(server_state, "Settings") as mock_settings_cls,
+        patch("telegram.tool_session.Settings") as mock_settings_cls,
         patch.dict(
             "sys.modules",
             {
@@ -330,7 +330,7 @@ async def test_lifespan_unconfigured_mode(server_state):
     from telegram.server import _lifespan
 
     with (
-        patch.object(server_state, "Settings") as mock_settings_cls,
+        patch("telegram.tool_session.Settings") as mock_settings_cls,
         patch(
             "telegram.credential_state.resolve_credential_state",
             return_value=CredentialState.AWAITING_SETUP,
@@ -359,7 +359,7 @@ async def test_lifespan_shuts_down_namespace_backends(server_state):
     set_global_provider(provider)
 
     with (
-        patch.object(server_state, "Settings") as mock_settings_cls,
+        patch("telegram.tool_session.Settings") as mock_settings_cls,
         patch(
             "telegram.credential_state.resolve_credential_state",
             return_value=CredentialState.AWAITING_SETUP,
@@ -389,7 +389,7 @@ async def test_lifespan_resolves_saved_credentials(server_state):
     mock_bot.is_authorized = AsyncMock(return_value=True)
 
     with (
-        patch.object(server_state, "Settings") as mock_settings_cls,
+        patch("telegram.tool_session.Settings") as mock_settings_cls,
         patch(
             "telegram.credential_state.resolve_credential_state",
             return_value=CredentialState.CONFIGURED,
@@ -452,7 +452,7 @@ def test_create_backend_instance_user_mode():
     with patch("telegram.backends.user_backend.UserBackend") as mock_user:
         backend = _create_backend_instance(settings)
     assert backend is mock_user.return_value
-    mock_user.assert_called_once_with(settings)
+    mock_user.assert_called_once_with(settings, namespace="default")
 
 
 # --- pending_auth ---

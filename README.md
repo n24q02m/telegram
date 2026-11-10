@@ -227,7 +227,50 @@ telegram --version  # print the version
 `--user` selects the storage namespace (default `default`, used by stdio and
 the `no-auth` / `token` HTTP modes). Unknown subcommands exit with status 2.
 
+### Tool commands
+
+Every MCP tool is also a one-shot CLI command: `<tool> <action> [flags]` takes
+the tool's own arguments, calls the same handler the MCP server registers, and
+connects the backend for that single call -- no server process and no MCP
+client involved. `--json` prints the tool result as JSON; without it the result
+is `key: value` lines. A tool error goes to stderr and exits 1.
+
+```bash
+# message: send, edit, delete, forward, pin, react, search, history
+telegram message send --chat-id @mychannel --text "deploy is green"
+telegram message history --chat-id=-1001234567890 --limit 5 --json
+telegram message search --query "invoice" --json
+
+# chat: list, info, create, join, leave, members, admin, settings, topics
+telegram chat list --json
+telegram chat members --chat-id @mychannel --limit 100
+
+# media: send_photo, send_file, send_voice, send_video, download
+telegram media send_photo --chat-id @mychannel --file-path-or-url ./shot.png --caption "nightly"
+telegram media download --chat-id 123456789 --message-id 42 --output-dir ./media
+
+# contact: list, search, add, block (user mode only)
+telegram contact search --query "An"
+telegram contact block --user-id 123456789 --unblock
+
+# settings: status, set, cache_clear -- the MCP tool named `config`
+telegram settings status
+telegram settings set --key message_limit --value 50
+
+# help: full documentation, no credentials needed
+telegram help media
+```
+
+The MCP tool `config` is `telegram settings` on the CLI, because `config` is
+hull's operator command for the saved credential blob. Negative chat ids must
+be attached with `=` (`--chat-id=-1001234567890`), otherwise argparse reads
+them as a flag. `--user <ns>` selects the namespace, as for the operator
+commands.
+
 ## Tools
+
+Each tool below is one MCP tool and one CLI group (`telegram <tool> <action>`,
+see [Tool commands](#tool-commands)); both call the same handler.
 
 | Tool | Actions | Description |
 |:-----|:--------|:------------|

@@ -16,12 +16,15 @@ from telegram import __version__
 from .backends.base import TelegramBackend
 from .config import Settings
 from .security import build_external_tool_result
-from .tools.chats import ChatOptions, handle_chats
-from .tools.config_tool import handle_config
-from .tools.contacts import ContactsOptions, handle_contacts
-from .tools.help_tool import handle_help
-from .tools.media import MediaOptions, handle_media
-from .tools.messages import MessagesArgs, handle_messages
+from .tool_session import load_settings
+from .tools.dispatch import (
+    run_chat,
+    run_config,
+    run_contact,
+    run_help,
+    run_media,
+    run_message,
+)
 from .utils.formatting import err, ok
 
 # Silence httpx INFO-level request logs so the bot token in the request URL
@@ -130,40 +133,20 @@ def _not_ready_response() -> dict[str, Any]:
 
 
 def _ensure_settings() -> Settings:
-    """Initialize settings for the ``default`` namespace.
+    """Settings for the ``default`` namespace, unconfigured ``Settings`` if none.
 
-    Env vars win; otherwise the credentials saved by ``telegram auth`` are
-    loaded explicitly (never exported into ``os.environ``, which would leak
-    them to every subprocess).
+    The resolution itself (env first, then the credentials saved by
+    ``telegram auth``) lives in :func:`telegram.tool_session.load_settings`,
+    which the CLI tool commands call too.
     """
-    settings = Settings()
-    if not settings.is_configured:
-        from .credential_state import (
-            _read_single_user_config,
-            resolve_credential_state,
-        )
-
-        state = resolve_credential_state()
-        if state.value == "configured":
-            saved_config = _read_single_user_config()
-            if saved_config:
-                settings = Settings.from_saved_config(saved_config)
-    return settings
+    return load_settings() or Settings()
 
 
 def _create_backend_instance(settings: Settings) -> TelegramBackend:
     """Create a backend instance based on settings mode."""
-    if settings.mode == "bot":
-        from .backends.bot_backend import BotBackend
+    from .auth.telegram_auth_provider import create_backend
 
-        assert settings.bot_token is not None
-        return BotBackend(settings.bot_token)
-    else:
-        from .backends.user_backend import UserBackend
-
-        assert settings.api_id is not None
-        assert settings.api_hash is not None
-        return UserBackend(settings)
+    return create_backend(settings, DEFAULT_NAMESPACE)
 
 
 async def _shutdown_provider() -> None:
@@ -292,7 +275,8 @@ async def message(
     if backend is None:
         return _not_ready_response()
 
-    args = MessagesArgs(
+    return await run_message(
+        backend,
         action=action,
         chat_id=chat_id,
         text=text,
@@ -306,7 +290,6 @@ async def message(
         limit=limit,
         offset_id=offset_id,
     )
-    return await handle_messages(backend, args)
 
 
 @mcp.tool(
@@ -350,7 +333,9 @@ async def chat(
     if backend is None:
         return _not_ready_response()
 
-    opts = ChatOptions(
+    return await run_chat(
+        backend,
+        action=action,
         chat_id=chat_id,
         title=title,
         description=description,
@@ -363,7 +348,6 @@ async def chat(
         topic_id=topic_id,
         topic_name=topic_name,
     )
-    return await handle_chats(backend, action, opts)
 
 
 @mcp.tool(
@@ -398,7 +382,9 @@ async def media(
     if backend is None:
         return _not_ready_response()
 
-    opts = MediaOptions(
+    return await run_media(
+        backend,
+        action=action,
         chat_id=chat_id,
         file_path_or_url=file_path_or_url,
         message_id=message_id,
@@ -406,7 +392,6 @@ async def media(
         output_dir=output_dir,
         file_id=file_id,
     )
-    return await handle_media(backend, action, opts)
 
 
 @mcp.tool(
@@ -440,7 +425,9 @@ async def contact(
     if backend is None:
         return _not_ready_response()
 
-    opts = ContactsOptions(
+    return await run_contact(
+        backend,
+        action=action,
         query=query,
         phone=phone,
         first_name=first_name,
@@ -448,7 +435,6 @@ async def contact(
         user_id=user_id,
         unblock=unblock,
     )
-    return await handle_contacts(backend, action, options=opts)
 
 
 def _unconfigured_status(namespace: str) -> dict[str, Any]:
@@ -510,9 +496,9 @@ async def config(
         if action == "status" and _is_unconfigured(namespace):
             return _unconfigured_status(namespace)
         return _not_ready_response()
-    return await handle_config(
+    return await run_config(
         backend,
-        action,
+        action=action,
         message_limit=message_limit,
         timeout=timeout,
         key=key,
@@ -534,7 +520,7 @@ async def help(topic: str | None = None) -> str:
 
     Topics: telegram | messages | chats | media | contacts | all (default: all)
     """
-    return await handle_help(topic)
+    return await run_help(topic)
 
 
 # --- Resources ---

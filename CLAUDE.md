@@ -114,6 +114,14 @@ telegram doctor
 telegram token hash                       # reads the token from stdin / prompt
 ```
 
+Every MCP tool is also a one-shot tool command that calls the same handler:
+`telegram message <action>`, `telegram chat <action>`,
+`telegram media <action>`, `telegram contact <action>`,
+`telegram settings <status|set|cache_clear>` (the MCP `config` tool; `config`
+is the operator command above) and `telegram help [topic]`. Add `--json` for
+the tool envelope on stdout; a tool error goes to stderr and exits 1. See the
+README "Tool commands" subsection for one example per group.
+
 `--user` selects the hull namespace (default `default`). Unknown subcommands
 and argument errors exit 2.
 
