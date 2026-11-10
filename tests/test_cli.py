@@ -14,6 +14,8 @@ actually gone.
 from __future__ import annotations
 
 import io
+import tomllib
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -75,13 +77,13 @@ class TestRcContract:
     def test_help_rc_0(self, capsys):
         assert cli.main(["--help"]) == 0
         out = capsys.readouterr().out
-        assert "usage: better-telegram-mcp" in out
+        assert "usage: telegram" in out
         for name in ("auth", "login", "logout", "status", "token"):
             assert name in out
 
     def test_version_rc_0(self, capsys):
         assert cli.main(["--version"]) == 0
-        assert capsys.readouterr().out.strip() == f"better-telegram-mcp {__version__}"
+        assert capsys.readouterr().out.strip() == f"telegram {__version__}"
 
     def test_unknown_subcommand_rc_2(self, capsys):
         assert cli.main(["nope"]) == 2
@@ -102,17 +104,61 @@ class TestRcContract:
 
     def test_status_on_empty_home(self, capsys):
         assert cli.main(["status"]) == 0
-        assert "better-telegram-mcp: not configured" in capsys.readouterr().out
+        assert "telegram: not configured" in capsys.readouterr().out
 
     def test_status_after_auth_reports_configured(self, capsys):
         _write_single_user_config({"TELEGRAM_BOT_TOKEN": FAKE_TOKEN})
         assert cli.main(["status"]) == 0
         out = capsys.readouterr().out
-        assert "better-telegram-mcp: configured" in out
+        assert "telegram: configured" in out
         assert FAKE_TOKEN not in out
 
     def test_invalid_user_namespace_rc_2(self, capsys):
         assert cli.main(["logout", "--yes", "--user", "../x"]) == 2
+
+
+# --- display name ---
+
+
+class TestDisplayName:
+    """Operator-facing text names the documented ``telegram`` command.
+
+    ``better-telegram-mcp`` is only a legacy alias of this same entry point, so
+    it must not leak into help, status or error output.
+    """
+
+    def test_display_name_is_an_installed_console_script(self):
+        pyproject = (Path(__file__).parents[1] / "pyproject.toml").read_text(
+            encoding="utf-8"
+        )
+        scripts = tomllib.loads(pyproject)["project"]["scripts"]
+        assert cli.DISPLAY_NAME in scripts
+
+    def test_help_names_the_telegram_command(self, capsys):
+        assert cli.main(["--help"]) == 0
+        out = capsys.readouterr().out
+        assert (
+            out.splitlines()[0] == "usage: telegram [-h] [--version] [<subcommand> ...]"
+        )
+        assert "better-telegram-mcp" not in out
+
+    def test_subcommand_help_names_the_telegram_command(self, capsys):
+        assert cli.main(["status", "--help"]) == 0
+        out = capsys.readouterr().out
+        assert out.startswith("usage: telegram status")
+        assert "better-telegram-mcp" not in out
+
+    def test_status_names_the_telegram_command(self, capsys):
+        assert cli.main(["status"]) == 0
+        out = capsys.readouterr().out
+        assert out.splitlines()[0] == "telegram: not configured"
+        assert "better-telegram-mcp" not in out
+
+    def test_unknown_subcommand_names_the_telegram_command(self, capsys):
+        assert cli.main(["nope"]) == 2
+        err = capsys.readouterr().err
+        assert err.splitlines()[0] == "telegram: unknown subcommand 'nope'"
+        assert "better-telegram-mcp" not in err
 
 
 # --- auth / login ---

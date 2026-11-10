@@ -39,9 +39,15 @@ from telegram.credential_state import DEFAULT_NAMESPACE, PLUGIN_NAME
 _MARKER_LEAF = "tokens/app-identity"
 _SESSION_LEAF = "session"
 
-# Display name handed to hull's ``build_cli``. It is also the argparse ``prog``
-# of every subcommand parser and the header of ``--help``.
-DISPLAY_NAME = "better-telegram-mcp"
+# Command name handed to hull's ``build_cli``. It is the documented console
+# script (``[project.scripts]`` in pyproject.toml), so it is also the argparse
+# ``prog`` of every subcommand parser and the prefix of ``--help``, ``status``,
+# ``config``, ``doctor`` and unknown-subcommand output.
+# The legacy ``better-telegram-mcp`` name survives only where it is a
+# compatibility key -- ``sessions.SERVER_NAME`` for the migrated credential
+# entry and ``config.LEGACY_DATA_DIR_NAME`` for the pre-rename data dir -- never
+# in operator-facing text.
+DISPLAY_NAME = "telegram"
 
 
 def _serve(argv: list[str]) -> int | None:
@@ -834,13 +840,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     _migrate_legacy_for_builtins(args)
     return build_cli(
-        # Display name kept at the published package's console name
-        # (sessions.SERVER_NAME), which is also the key of the legacy
-        # credential entry migrated by credential_state.
+        # The console-script name operators type, matching README and
+        # pyproject.toml. The legacy `better-telegram-mcp` script is an alias of
+        # this same entry point, so it reports the documented name too.
         DISPLAY_NAME,
-        # Credential slug is "telegram", not the console name minus "-mcp"
-        # ("better-telegram"), so `config`/`status`/`doctor` read the same
-        # store the server writes to (credential_state.PLUGIN_NAME).
+        # Credential slug is "telegram", not the display name minus "-mcp", so
+        # `config`/`status`/`doctor` read the same store the server writes to
+        # (credential_state.PLUGIN_NAME) rather than deriving it from the name.
         plugin_name=PLUGIN_NAME,
         serve=_serve,
         extra=_extras(),
