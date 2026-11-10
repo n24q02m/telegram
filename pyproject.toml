@@ -68,7 +68,10 @@ packages = ["src/telegram"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-testpaths = ["tests"]
+# hooks/tests holds the plugin-hook suite, which sits beside the script it
+# loads (hooks/check-credentials.py) instead of under tests/. Listing it here
+# is what makes a plain `pytest` run it at all.
+testpaths = ["tests", "hooks/tests"]
 pythonpath = ["tests"]
 timeout = 30
 markers = [
