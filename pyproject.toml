@@ -35,7 +35,7 @@ dependencies = [
     "cryptography>=50.0.2",
     "starlette>=1.10.0",
     "uvicorn>=0.54.0",
-    "cryptg>=0.6.0",
+    "cryptg>=0.6.1",
 ]
 [dependency-groups]
 dev = [
@@ -45,7 +45,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
     "ruff>=0.17.3",
-    "ty>=0.0.96",
+    "ty>=0.0.97",
     "pre-commit>=4.7.0",
 ]
 [project.scripts]
