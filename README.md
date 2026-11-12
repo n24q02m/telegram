@@ -32,7 +32,7 @@ mcp-name: io.github.n24q02m/better-telegram-mcp
 | [better-godot-mcp](https://github.com/n24q02m/better-godot-mcp) | Composite MCP server for Godot Engine -- 17 composite tools for AI-assisted g... | MCP |
 | [better-notion-mcp](https://github.com/n24q02m/better-notion-mcp) | Markdown-first Notion for AI agents -- pages, databases, blocks, and comments... | MCP |
 | [better-semantic-release](https://github.com/n24q02m/better-semantic-release) | Drop-in python-semantic-release fork with built-in release-safety guards (orp... | Tooling |
-| [better-telegram-mcp](https://github.com/n24q02m/better-telegram-mcp) | Telegram for AI agents -- messages, chats, media, and contacts across both bo... | MCP |
+| [telegram](https://github.com/n24q02m/telegram) | Telegram for AI agents -- messages, chats, media, and contacts across both bo... | MCP |
 | [better-workspace-mcp](https://github.com/n24q02m/better-workspace-mcp) | Google Workspace MCP server (Docs/Drive/Calendar/Gmail/Sheets/Slides/Tasks/Ch... | MCP |
 | [claude-plugins](https://github.com/n24q02m/claude-plugins) | Claude Code plugin marketplace for the n24q02m MCP servers -- install web sea... | Marketplace |
 | [imagine-mcp](https://github.com/n24q02m/imagine-mcp) | Image and video understanding + generation for AI agents -- across Gemini, Op... | MCP |
@@ -86,7 +86,7 @@ mcp-name: io.github.n24q02m/better-telegram-mcp
 ```bash
 # Claude Code plugin (stdio, bot mode)
 /plugin marketplace add n24q02m/claude-plugins
-/plugin install better-telegram-mcp@n24q02m-plugins
+/plugin install telegram@n24q02m-plugins
 
 # Direct uvx invocation (stdio, bot mode)
 claude mcp add telegram -e TELEGRAM_BOT_TOKEN=123456:ABC-DEF -- uvx n24q02m-telegram
@@ -106,13 +106,13 @@ alias of `telegram`. Local data moves once from `~/.better-telegram-mcp` to
 
 | Client | Install |
 |:-------|:--------|
-| Claude Code | `/plugin marketplace add n24q02m/claude-plugins` + `/plugin install better-telegram-mcp@n24q02m-plugins` (stdio bot mode), or `claude mcp add` as in the block above |
+| Claude Code | `/plugin marketplace add n24q02m/claude-plugins` + `/plugin install telegram@n24q02m-plugins` (stdio bot mode), or `claude mcp add` as in the block above |
 | Cursor / Windsurf / Gemini CLI / any MCP client | `mcpServers` JSON in the client's config: stdio `command`, or `type: "http"` + `url` pointing at a server you run (see [HTTP mode](#http-mode)) |
 
 **Install with AI agent** -- paste this to your AI coding agent:
 
 > Install MCP server `telegram` following the steps at
-> https://raw.githubusercontent.com/n24q02m/claude-plugins/main/plugins/better-telegram-mcp/setup-with-agent.md
+> https://raw.githubusercontent.com/n24q02m/claude-plugins/main/plugins/telegram/setup-with-agent.md
 
 ## Setup
 
