@@ -658,7 +658,7 @@ wheels = [
 
 [[package]]
 name = "n24q02m-telegram"
-version = "4.24.0b2"
+version = "4.24.0"
 source = { editable = "." }
 dependencies = [
     { name = "cryptg" },
@@ -694,7 +694,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "n24q02m-hull", specifier = ">=0.5.0b1,<0.6" },
-    { name = "pydantic", specifier = ">=2.14.2,<2.15" },
+    { name = "pydantic", specifier = ">=2.14.3,<2.15" },
     { name = "pydantic-settings", specifier = ">=2.14.2,<2.15" },
     { name = "starlette", specifier = ">=1.10.0" },
     { name = "telethon", specifier = ">=1.45.0" },
