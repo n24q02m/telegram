@@ -2,6 +2,28 @@
 
 <!-- version list -->
 
+## v4.24.0 (2026-11-12)
+
+### Bug Fixes
+
+- Assert the unknown-subcommand shape instead of an exact line
+  ([#1163](https://github.com/n24q02m/telegram/pull/1163),
+  [`0d76f86`](https://github.com/n24q02m/telegram/commit/0d76f864adb99102ca5069c7a867bc60e860f2ba))
+
+- Declare the renamed registry identity ([#1165](https://github.com/n24q02m/telegram/pull/1165),
+  [`3e60209`](https://github.com/n24q02m/telegram/commit/3e6020902c25feee2377fcccb792baaedbe7ac93))
+
+- Point README plugin install and setup links at telegram
+  ([#1164](https://github.com/n24q02m/telegram/pull/1164),
+  [`fa9db94`](https://github.com/n24q02m/telegram/commit/fa9db94e08d48751466113e7f162adce18d377ca))
+
+- **deps**: Lock file maintenance ([#1162](https://github.com/n24q02m/telegram/pull/1162),
+  [`202ffe6`](https://github.com/n24q02m/telegram/commit/202ffe6288be247becb2ad016711dae786737995))
+
+- **deps**: Update patch dependencies ([#1161](https://github.com/n24q02m/telegram/pull/1161),
+  [`7ae7f8f`](https://github.com/n24q02m/telegram/commit/7ae7f8f666057f02e3646ae8c6c42522af3d136e))
+
+
 ## v4.24.0-beta.2 (2026-11-10)
 
 ### Bug Fixes
