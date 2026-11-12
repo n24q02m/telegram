@@ -1,6 +1,6 @@
 # telegram
 
-mcp-name: io.github.n24q02m/better-telegram-mcp
+mcp-name: io.github.n24q02m/telegram
 
 **Telegram for AI agents: messages, chats, media, and contacts in bot and user-account modes.**
 
@@ -96,11 +96,12 @@ docker run -i --rm -e TELEGRAM_BOT_TOKEN=123456:ABC-DEF n24q02m/telegram
 ```
 
 The package is `n24q02m-telegram` (formerly `better-telegram-mcp`; the old
-package receives one final release then freezes). The MCP Registry id stays
-`io.github.n24q02m/better-telegram-mcp`, the Docker image is
-`n24q02m/telegram`, and the legacy `better-telegram-mcp` command is kept as an
-alias of `telegram`. Local data moves once from `~/.better-telegram-mcp` to
-`~/.telegram` on first start.
+package receives one final release then freezes). The MCP Registry id is
+`io.github.n24q02m/telegram`, the Docker image is `n24q02m/telegram`, and the
+legacy `better-telegram-mcp` command is kept as an alias of `telegram`. The
+pre-rename registry entry `io.github.n24q02m/better-telegram-mcp` stays frozen
+in the registry and is never republished. Local data moves once from
+`~/.better-telegram-mcp` to `~/.telegram` on first start.
 
 ### Install matrix
 

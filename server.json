@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.n24q02m/better-telegram-mcp",
+  "name": "io.github.n24q02m/telegram",
   "title": "Telegram MCP",
   "description": "Telegram for AI agents: messages, chats, media, and contacts in bot and user-account modes.",
   "repository": {
