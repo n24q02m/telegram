@@ -157,7 +157,12 @@ class TestDisplayName:
     def test_unknown_subcommand_names_the_telegram_command(self, capsys):
         assert cli.main(["nope"]) == 2
         err = capsys.readouterr().err
-        assert err.splitlines()[0] == "telegram: unknown subcommand 'nope'"
+        # hull appends the available commands after the quoted name; the set of
+        # commands grows, so assert the stable shape instead of an exact line.
+        first = err.splitlines()[0]
+        assert first.startswith("telegram: unknown subcommand 'nope'")
+        assert "(expected one of: " in first
+        assert first.endswith(")")
         assert "better-telegram-mcp" not in err
 
 
