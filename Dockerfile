@@ -39,7 +39,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Build stdio: `docker buildx build --target stdio -t <repo>:stdio .`
 # Build http:  `docker buildx build --target http  -t <repo>:http .`
 # Build latest (= http): `docker buildx build --target http -t <repo>:latest .`
-FROM python:3.13-slim-bookworm@sha256:281d39ff02e3b389401586134ff9e6572954687822a58055ec07a60ded4e0b7f AS runtime
+FROM python:3.13-slim-bookworm@sha256:a5a7017efc5969e00ae2b91c8eb0631049a569652aa4ffc4501769049ae45c72 AS runtime
 
 LABEL org.opencontainers.image.source="https://github.com/n24q02m/telegram"
 LABEL io.modelcontextprotocol.server.name="io.github.n24q02m/telegram"
