@@ -2,6 +2,43 @@
 
 <!-- version list -->
 
+## v4.24.1-beta.1 (2026-11-14)
+
+### Bug Fixes
+
+- Keep the renovate lock file maintenance title lowercase
+  ([#1170](https://github.com/n24q02m/telegram/pull/1170),
+  [`63c5c36`](https://github.com/n24q02m/telegram/commit/63c5c36c846baefa4891b6fc4cbfe48156cf91b2))
+
+- Move to hull 0.6.1 ([#1169](https://github.com/n24q02m/telegram/pull/1169),
+  [`b674276`](https://github.com/n24q02m/telegram/commit/b67427630441184cfdee65d6021fc42c81fcc68b))
+
+- Sort the safe_error imports ([#1172](https://github.com/n24q02m/telegram/pull/1172),
+  [`b5713be`](https://github.com/n24q02m/telegram/commit/b5713be85565bf3512919c508b13336af0c85d6f))
+
+- Surface the Bot API refusal in tool errors instead of a generic failure
+  ([#1172](https://github.com/n24q02m/telegram/pull/1172),
+  [`b5713be`](https://github.com/n24q02m/telegram/commit/b5713be85565bf3512919c508b13336af0c85d6f))
+
+- Update handover version to 4.24.0 ([#1171](https://github.com/n24q02m/telegram/pull/1171),
+  [`8c1bd9b`](https://github.com/n24q02m/telegram/commit/8c1bd9ba68600d46747c1db21c4df909254de3fe))
+
+- **deps**: Update docker/login-action action to v4.8.0
+  ([#1168](https://github.com/n24q02m/telegram/pull/1168),
+  [`bca5c9e`](https://github.com/n24q02m/telegram/commit/bca5c9e026410376c591ad30b6ad9498586ee9f6))
+
+- **deps**: Update patch dependencies ([#1167](https://github.com/n24q02m/telegram/pull/1167),
+  [`73e0b76`](https://github.com/n24q02m/telegram/commit/73e0b764585f31a5baaad43044eb592f4101ab30))
+
+- **deps**: Update python:3.13-slim-bookworm Docker digest to 281d39f
+  ([#1135](https://github.com/n24q02m/telegram/pull/1135),
+  [`3075238`](https://github.com/n24q02m/telegram/commit/3075238240009c2dfad537ed301f3fd021fe84c5))
+
+- **deps**: Update python:3.13-slim-bookworm Docker digest to a5a7017
+  ([#1166](https://github.com/n24q02m/telegram/pull/1166),
+  [`c4c9c4e`](https://github.com/n24q02m/telegram/commit/c4c9c4e81de03a387e2905461915fddbdc7e4e9e))
+
+
 ## v4.24.0 (2026-11-12)
 
 ### Bug Fixes
