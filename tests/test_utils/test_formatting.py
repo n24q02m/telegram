@@ -132,3 +132,23 @@ def test_safe_error_base_exception():
         == "KeyboardInterrupt: Operation failed. Check server logs for details."
     )
     assert "stop" not in result["error"]
+
+
+def test_safe_error_surfaces_bot_api_refusal():
+    # The Bot API description is what the caller can act on ("chat not found",
+    # "bot was blocked by the user"); the server log is out of reach over HTTP.
+    from telegram.backends.bot_backend import TelegramAPIError
+
+    result = safe_error(TelegramAPIError("Bad Request: chat not found", 400))
+    assert result == {"error": "Telegram API: Bad Request: chat not found"}
+
+
+def test_safe_error_bot_api_refusal_keeps_the_token_redacted():
+    from telegram.backends.bot_backend import TelegramAPIError
+
+    token = "123456789:" + "A" * 35
+    result = safe_error(
+        TelegramAPIError(f"request to https://api.telegram.org/bot{token}/getMe failed")
+    )
+    assert "A" * 35 not in result["error"]
+    assert "123456789:<redacted>" in result["error"]

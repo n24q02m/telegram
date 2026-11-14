@@ -14,6 +14,12 @@ def safe_error(e: Exception) -> dict[str, Any]:
     from ..backends.base import ModeError
     from ..backends.security import SecurityError
 
+    from ..backends.bot_backend import TelegramAPIError
+
     if isinstance(e, (ModeError, SecurityError, ValueError, FileNotFoundError)):
         return err(str(e))
+    if isinstance(e, TelegramAPIError):
+        # The Bot API description is the caller's only actionable signal; the
+        # bot token is already redacted when the exception is built.
+        return err(f"Telegram API: {e}")
     return err(f"{type(e).__name__}: Operation failed. Check server logs for details.")
