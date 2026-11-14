@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v4.25.0-beta.3 (2026-11-14)
+
+### Bug Fixes
+
+- Raise ModeError explicitly in bot-only stubs for ty 0.0.104
+  ([#1177](https://github.com/n24q02m/telegram/pull/1177),
+  [`f0d657e`](https://github.com/n24q02m/telegram/commit/f0d657e6777fd03ca0ea33845d723cdcae4fd8cc))
+
+- **deps**: Lock file maintenance ([#1176](https://github.com/n24q02m/telegram/pull/1176),
+  [`3e967ec`](https://github.com/n24q02m/telegram/commit/3e967ec12c51fd7b70f507b248f84d566f8f8eac))
+
+- **deps**: Update patch dependencies ([#1175](https://github.com/n24q02m/telegram/pull/1175),
+  [`65a72c5`](https://github.com/n24q02m/telegram/commit/65a72c5836864d8e1b294345c23ebe36bd19f16c))
+
+
 ## v4.25.0-beta.2 (2026-11-14)
 
 ### Bug Fixes
