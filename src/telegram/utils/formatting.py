@@ -12,9 +12,8 @@ def err(message: str) -> dict[str, Any]:
 def safe_error(e: Exception) -> dict[str, Any]:
     """Return sanitized error without leaking internal details."""
     from ..backends.base import ModeError
-    from ..backends.security import SecurityError
-
     from ..backends.bot_backend import TelegramAPIError
+    from ..backends.security import SecurityError
 
     if isinstance(e, (ModeError, SecurityError, ValueError, FileNotFoundError)):
         return err(str(e))
