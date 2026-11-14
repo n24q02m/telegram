@@ -658,7 +658,7 @@ wheels = [
 
 [[package]]
 name = "n24q02m-telegram"
-version = "4.25.0b2"
+version = "4.25.0b3"
 source = { editable = "." }
 dependencies = [
     { name = "cryptg" },
