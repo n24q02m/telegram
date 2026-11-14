@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v4.25.0-beta.2 (2026-11-14)
+
+### Bug Fixes
+
+- Point the handover version line at its source instead of a stale number
+  ([#1174](https://github.com/n24q02m/telegram/pull/1174),
+  [`ce5e33a`](https://github.com/n24q02m/telegram/commit/ce5e33ae722fa1bea4e4f8a580e75a770bb2dd08))
+
+
 ## v4.25.0-beta.1 (2026-11-14)
 
 ### Features
