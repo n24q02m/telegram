@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v4.25.0-beta.1 (2026-11-14)
+
+### Features
+
+- Attach hash-pinned requirements.lock to releases, bump tap and bucket on stable, allow hull 0.7
+  ([#1173](https://github.com/n24q02m/telegram/pull/1173),
+  [`4322997`](https://github.com/n24q02m/telegram/commit/4322997f43074ae59b248fa7f4bc5ead093da5c8))
+
+
 ## v4.24.1-beta.1 (2026-11-14)
 
 ### Bug Fixes
