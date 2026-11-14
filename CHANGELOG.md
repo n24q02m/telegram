@@ -2,6 +2,22 @@
 
 <!-- version list -->
 
+## v4.25.0-beta.4 (2026-11-14)
+
+### Bug Fixes
+
+- Let renovate merge only after every check is green
+  ([#1179](https://github.com/n24q02m/telegram/pull/1179),
+  [`1aba63c`](https://github.com/n24q02m/telegram/commit/1aba63c63d6e81ef5ea0f5181a94bc790d8d456c))
+
+- Require CI checks before a pull request merges into main
+  ([#1180](https://github.com/n24q02m/telegram/pull/1180),
+  [`c9c0d0b`](https://github.com/n24q02m/telegram/commit/c9c0d0bbfc4543937a3eebb0632c873ad17f4fa0))
+
+- **deps**: Lock file maintenance ([#1178](https://github.com/n24q02m/telegram/pull/1178),
+  [`934c471`](https://github.com/n24q02m/telegram/commit/934c4710f52c4489e331cc8ecba2bbfa6451f35e))
+
+
 ## v4.25.0-beta.3 (2026-11-14)
 
 ### Bug Fixes
