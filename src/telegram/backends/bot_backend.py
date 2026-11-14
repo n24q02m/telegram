@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 
 from ..errors import redact_bot_token
-from .base import TelegramBackend
+from .base import ModeError, TelegramBackend
 from .security import (
     SecurityError,
     fetch_url_safely,
@@ -169,7 +169,7 @@ class BotBackend(TelegramBackend):
         chat_id: str | int | None = None,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        self.ensure_mode("user")
+        raise ModeError("user")  # Bot API has no user-account surface
 
     async def get_history(
         self,
@@ -182,7 +182,7 @@ class BotBackend(TelegramBackend):
 
     # --- Chats ---
     async def list_chats(self, *, limit: int = 50) -> list[dict[str, Any]]:
-        self.ensure_mode("user")
+        raise ModeError("user")  # Bot API has no user-account surface
 
     async def get_chat_info(self, chat_id: str | int) -> dict[str, Any]:
         return await self._call("getChat", chat_id=chat_id)
@@ -190,10 +190,10 @@ class BotBackend(TelegramBackend):
     async def create_chat(
         self, title: str, *, is_channel: bool = False
     ) -> dict[str, Any]:
-        self.ensure_mode("user")
+        raise ModeError("user")  # Bot API has no user-account surface
 
     async def join_chat(self, link_or_hash: str) -> bool:
-        self.ensure_mode("user")
+        raise ModeError("user")  # Bot API has no user-account surface
 
     async def leave_chat(self, chat_id: str | int) -> bool:
         return await self._call("leaveChat", chat_id=chat_id)
@@ -386,15 +386,15 @@ class BotBackend(TelegramBackend):
 
     # --- Contacts (user-only) ---
     async def list_contacts(self) -> list[dict[str, Any]]:
-        self.ensure_mode("user")
+        raise ModeError("user")  # Bot API has no user-account surface
 
     async def search_contacts(self, query: str) -> list[dict[str, Any]]:
-        self.ensure_mode("user")
+        raise ModeError("user")  # Bot API has no user-account surface
 
     async def add_contact(
         self, phone: str, first_name: str, *, last_name: str | None = None
     ) -> bool:
-        self.ensure_mode("user")
+        raise ModeError("user")  # Bot API has no user-account surface
 
     async def block_user(self, user_id: int, *, unblock: bool = False) -> bool:
-        self.ensure_mode("user")
+        raise ModeError("user")  # Bot API has no user-account surface
