@@ -693,7 +693,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=4.1.6,<5" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "loguru", specifier = ">=0.7.3" },
-    { name = "n24q02m-hull", specifier = ">=0.8.0b1,<0.9" },
+    { name = "n24q02m-hull", specifier = ">=0.8.0b2,<0.9" },
     { name = "pydantic", specifier = ">=2.14.3,<2.15" },
     { name = "pydantic-settings", specifier = ">=2.14.2,<2.15" },
     { name = "starlette", specifier = ">=1.10.0" },
