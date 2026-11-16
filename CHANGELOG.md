@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v4.25.0-beta.6 (2026-11-16)
+
+### Bug Fixes
+
+- Lock hull 0.8.0-beta.2 so token checks no longer block the event loop
+  ([#1194](https://github.com/n24q02m/telegram/pull/1194),
+  [`a8e157e`](https://github.com/n24q02m/telegram/commit/a8e157ef02070a227996f15931ca5d3dc5361461))
+
+- **deps**: Lock file maintenance ([#1193](https://github.com/n24q02m/telegram/pull/1193),
+  [`e73d49e`](https://github.com/n24q02m/telegram/commit/e73d49eef84b637d91df6dbc5ba2e8ca81f6268c))
+
+- **deps**: Lock file maintenance ([#1192](https://github.com/n24q02m/telegram/pull/1192),
+  [`325ee57`](https://github.com/n24q02m/telegram/commit/325ee57de524617dd4630ca2506ec65fe42133ab))
+
+- **deps**: Update ty to >=0.0.100 ([#1195](https://github.com/n24q02m/telegram/pull/1195),
+  [`0bc6b0c`](https://github.com/n24q02m/telegram/commit/0bc6b0cac47f85264eab6b9251004222236db1dd))
+
+
 ## v4.25.0-beta.5 (2026-11-16)
 
 ### Bug Fixes
