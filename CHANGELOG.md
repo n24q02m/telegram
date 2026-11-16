@@ -2,6 +2,49 @@
 
 <!-- version list -->
 
+## v4.25.0-beta.5 (2026-11-16)
+
+### Bug Fixes
+
+- Bring CI workflows in line with the fleet CI policy lint
+  ([#1186](https://github.com/n24q02m/telegram/pull/1186),
+  [`ce9d7fc`](https://github.com/n24q02m/telegram/commit/ce9d7fc7d62f277cb7f78822d2210df204be4c80))
+
+- Dispatch the tap and bucket cd.yml that replaced bump.yml
+  ([#1185](https://github.com/n24q02m/telegram/pull/1185),
+  [`4a59278`](https://github.com/n24q02m/telegram/commit/4a592787c2dd966f7591c26d5f4c72a83cc67378))
+
+- Pin hull 0.8.0-beta.1 so the beta ships the SQLite read-lock and lease-count fixes
+  ([#1190](https://github.com/n24q02m/telegram/pull/1190),
+  [`28621a0`](https://github.com/n24q02m/telegram/commit/28621a01e582cf7d8fa00f5beb655dbb84ebfb06))
+
+- Run lint and tests on workflow_dispatch in ci
+  ([#1183](https://github.com/n24q02m/telegram/pull/1183),
+  [`66c1f2e`](https://github.com/n24q02m/telegram/commit/66c1f2e9cdc05881d6f5b259589b4b9a359bbc52))
+
+- Start the marketplace plugin sync with workflow_dispatch
+  ([#1184](https://github.com/n24q02m/telegram/pull/1184),
+  [`3d1e4c4`](https://github.com/n24q02m/telegram/commit/3d1e4c42a819e2deff4bd3d02d5b5c33e7de64cf))
+
+- Upload coverage to codecov over oidc and fail the job when it is refused
+  ([#1187](https://github.com/n24q02m/telegram/pull/1187),
+  [`21d5ce2`](https://github.com/n24q02m/telegram/commit/21d5ce2f00472c9adf4fc2521c4829743731392a))
+
+- **deps**: Lock file maintenance ([#1191](https://github.com/n24q02m/telegram/pull/1191),
+  [`e4d3980`](https://github.com/n24q02m/telegram/commit/e4d39800141266f6e47fa8b79cddd5f8cdb316ed))
+
+- **deps**: Lock file maintenance ([#1182](https://github.com/n24q02m/telegram/pull/1182),
+  [`10d9696`](https://github.com/n24q02m/telegram/commit/10d9696b280a6af9268903f1f3c6f0dae71bab21))
+
+- **deps**: Lock file maintenance ([#1181](https://github.com/n24q02m/telegram/pull/1181),
+  [`98d9393`](https://github.com/n24q02m/telegram/commit/98d93930040ef6f50bfc154600e3ff5062a9a417))
+
+### Features
+
+- Sync cross-promo section ([#1189](https://github.com/n24q02m/telegram/pull/1189),
+  [`a12fd3d`](https://github.com/n24q02m/telegram/commit/a12fd3d9db742d11a7c0c281d98a45bfaea6442a))
+
+
 ## v4.25.0-beta.4 (2026-11-14)
 
 ### Bug Fixes
