@@ -29,6 +29,7 @@ env:
   # this ghcr.io/n24q02m/telegram with no literal to keep in sync.
   GHCR_IMAGE: ghcr.io/${{ github.repository }}
 
+# ci-policy: allow concurrency reason: serialize releases, never cancel one mid-publish
 concurrency:
   group: release
   cancel-in-progress: false
@@ -37,6 +38,7 @@ jobs:
   readme-sync:
     name: Verify README registry metadata
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -49,6 +51,7 @@ jobs:
   release:
     name: Semantic Release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       released: ${{ steps.release.outputs.released }}
       tag: ${{ steps.release.outputs.tag }}
@@ -163,6 +166,7 @@ jobs:
     needs: [readme-sync, release]
     if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     # The trusted publisher for n24q02m-telegram is bound to this environment so it
     # never matches the old better-telegram-mcp publisher (same repo + workflow).
     environment: pypi
@@ -201,6 +205,7 @@ jobs:
       inputs.legacy_final_note
       && needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: pypi-legacy
     permissions:
       contents: read
@@ -279,6 +284,7 @@ jobs:
             runner: ubuntu-24.04-arm
             artifact: linux-arm64
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -313,13 +319,14 @@ jobs:
         with:
           name: digest-${{ matrix.artifact }}
           path: ${{ runner.temp }}/digests/*
-          retention-days: 1
+          retention-days: 5
 
   # =================== Merge Docker Manifests ===================
   merge-docker:
     name: Merge Docker Manifests
     needs: [release, build-docker]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -384,6 +391,7 @@ jobs:
     needs: [release, publish-pypi]
     if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -425,6 +433,7 @@ jobs:
     needs: [release, publish-pypi, release-lock]
     if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     env:
@@ -485,6 +494,7 @@ jobs:
     needs: [release, publish-pypi, merge-docker]
     if: needs.release.outputs.released == 'true' && needs.release.outputs.is_prerelease != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -527,6 +537,7 @@ jobs:
     needs: [release, publish-mcp-registry]
     if: needs.release.outputs.released == 'true' && needs.release.outputs.is_prerelease != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
