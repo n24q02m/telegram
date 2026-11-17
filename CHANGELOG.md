@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v4.25.0 (2026-11-17)
+
+### Bug Fixes
+
+- Pin hull to 0.8.0 stable ([#1199](https://github.com/n24q02m/telegram/pull/1199),
+  [`3e9154a`](https://github.com/n24q02m/telegram/commit/3e9154aa7ff35eafa0df56823c7aae95092cd9a3))
+
+
 ## v4.25.0-beta.7 (2026-11-17)
 
 ### Bug Fixes
