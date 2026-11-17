@@ -2,6 +2,18 @@
 
 <!-- version list -->
 
+## v4.25.1-beta.1 (2026-11-17)
+
+### Bug Fixes
+
+- Relock uv.lock in the release commit ([#1201](https://github.com/n24q02m/telegram/pull/1201),
+  [`a0cfdc6`](https://github.com/n24q02m/telegram/commit/a0cfdc680c4d386c61f82e32929ce30b9ced1bf4))
+
+- Wait for the package registry to serve the release before publishing to the MCP Registry
+  ([#1200](https://github.com/n24q02m/telegram/pull/1200),
+  [`2d6a062`](https://github.com/n24q02m/telegram/commit/2d6a0621ed88d5a8553445917e420789c42995e9))
+
+
 ## v4.25.0 (2026-11-17)
 
 ### Bug Fixes
