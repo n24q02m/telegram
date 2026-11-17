@@ -41,7 +41,7 @@ Do not put credentials, OTPs, session files, or raw protocol transcripts in the 
 
 ## In-flight and release notes
 
-`n24q02m-hull` comes from PyPI under the range `>=0.7.0,<0.8` declared in `pyproject.toml`; re-read that range and the published hull version before a release, because hull's own pin moves them together.
+`n24q02m-hull` comes from PyPI under the range declared in `[project].dependencies` of `pyproject.toml`; this file does not repeat the range, so a hull relock never leaves it stale. Re-read that range and the published hull version before a release, because hull's own pin moves them together.
 
 Source changes require repository-native checks and CI readback before merge. BETA/package publication and live protocol evidence are separate from source merge. Stable promotion is a separate release decision and is not implied by this handover.
 
