@@ -82,6 +82,10 @@ markers = [
 ]
 addopts = "-m 'not integration and not live and not full and not e2e'"
 [tool.ruff]
+# Files repo-bootstrap copies in are replaced on every apply and follow the
+# toolkit's own style. Linting or formatting them here (CI or the pre-commit
+# hooks, which pass --force-exclude) would leave a copy apply reports as drifted.
+extend-exclude = ["scripts/repo-bootstrap", "scripts/main_integrity.py", "scripts/merge_gate.py"]
 target-version = "py313"
 line-length = 88
 [tool.ruff.lint]
