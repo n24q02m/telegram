@@ -2,6 +2,22 @@
 
 <!-- version list -->
 
+## v4.25.0-beta.7 (2026-11-17)
+
+### Bug Fixes
+
+- Keep the repo-bootstrap toolkit copy out of ruff
+  ([#1198](https://github.com/n24q02m/telegram/pull/1198),
+  [`5e1574d`](https://github.com/n24q02m/telegram/commit/5e1574d0240f924544ebd75bf748a03ea57da033))
+
+- Point the handover at pyproject for the hull range instead of a stale copy
+  ([#1197](https://github.com/n24q02m/telegram/pull/1197),
+  [`aa37635`](https://github.com/n24q02m/telegram/commit/aa37635b2cf45f64017540c3e78c80b671a0bd8a))
+
+- **deps**: Lock file maintenance ([#1196](https://github.com/n24q02m/telegram/pull/1196),
+  [`13c4615`](https://github.com/n24q02m/telegram/commit/13c4615e6092bbc6d9ac8b05a25fe364a6bd2648))
+
+
 ## v4.25.0-beta.6 (2026-11-16)
 
 ### Bug Fixes
