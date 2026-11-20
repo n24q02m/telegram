@@ -2,6 +2,7 @@ import importlib.util
 import io
 import json
 import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -33,6 +34,40 @@ class TestCheckCredentials(unittest.TestCase):
         mock_exists.side_effect = lambda p: p == "/home/user/.config/mcp/config.enc"
         self.assertTrue(check_credentials._is_configured())
 
+    @patch.dict(
+        os.environ, {"CLAUDE_PLUGIN_OPTION_TELEGRAM_BOT_TOKEN": "token123"}, clear=True
+    )
+    @patch("os.path.exists")
+    def test_is_configured_plugin_option(self, mock_exists):
+        # Claude Code hands the plugin's TELEGRAM_BOT_TOKEN option to hooks as
+        # CLAUDE_PLUGIN_OPTION_TELEGRAM_BOT_TOKEN; only the server sees the
+        # plain TELEGRAM_BOT_TOKEN name.
+        mock_exists.return_value = False
+        self.assertTrue(check_credentials._is_configured())
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_is_configured_saved_store(self):
+        # `telegram auth` saves to hull's store at ~/.telegram/config.json;
+        # hull still reads the two pre-rename directories.
+        for store_dir in (".telegram", ".telegram-mcp", ".better-telegram-mcp"):
+            with self.subTest(store_dir=store_dir):
+                with tempfile.TemporaryDirectory() as home:
+                    os.makedirs(os.path.join(home, store_dir))
+                    with open(os.path.join(home, store_dir, "config.json"), "wb"):
+                        pass
+                    with patch("os.path.expanduser", return_value=home):
+                        self.assertTrue(check_credentials._is_configured())
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_http_settings_alone_are_not_credentials(self):
+        # ~/.telegram/config.toml holds HTTP server settings, not credentials.
+        with tempfile.TemporaryDirectory() as home:
+            os.makedirs(os.path.join(home, ".telegram"))
+            with open(os.path.join(home, ".telegram", "config.toml"), "wb"):
+                pass
+            with patch("os.path.expanduser", return_value=home):
+                self.assertFalse(check_credentials._is_configured())
+
     @patch.dict(os.environ, {}, clear=True)
     @patch("os.path.exists")
     def test_not_configured(self, mock_exists):
@@ -59,9 +94,12 @@ class TestCheckCredentials(unittest.TestCase):
         mock_exit.assert_called_with(2)
         output = json.loads(mock_stdout.getvalue())
         self.assertEqual(output["decision"], "block")
-        self.assertIn(
-            "better-telegram-mcp credentials not configured", output["reason"]
+        self.assertTrue(
+            output["reason"].startswith("telegram credentials not configured")
         )
+        self.assertIn("telegram auth --bot-token", output["reason"])
+        self.assertIn("telegram auth --phone", output["reason"])
+        self.assertNotIn("better-telegram-mcp", output["reason"])
 
     @patch.dict(os.environ, {"TELEGRAM_PHONE": "123456789"}, clear=True)
     @patch("sys.stdin", io.StringIO(json.dumps({"tool_name": "send_message"})))
@@ -99,8 +137,8 @@ class TestCheckCredentials(unittest.TestCase):
         mock_exit.assert_called_with(2)
         output = json.loads(mock_stdout.getvalue())
         self.assertEqual(output["decision"], "block")
-        self.assertIn(
-            "better-telegram-mcp credentials not configured", output["reason"]
+        self.assertTrue(
+            output["reason"].startswith("telegram credentials not configured")
         )
 
     @patch("sys.stdin", io.StringIO('["not a dict"]'))
@@ -123,8 +161,8 @@ if __name__ == "__main__":
     unittest.main()
 
 # Reflection:
-# The check-credentials.py hook for better-telegram-mcp blocks tool access
-# when no credentials (env vars or config file) are found, except for
+# The check-credentials.py hook for the telegram plugin blocks tool access
+# when no credentials (env vars or saved credential files) are found, except for
 # specific tools ending in __setup, __help, or __config.
 # This test suite ensures that both blocking and allow-listing logic
 # work as expected, and that the hook handles malformed input gracefully.

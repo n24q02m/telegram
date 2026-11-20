@@ -13,8 +13,7 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
-# git is needed by uv to fetch the n24q02m-hull git pin (pyproject.toml) until
-# hull is on PyPI; builder stage only, the runtime image copies the venv.
+# Builder stage only; the runtime image copies the venv.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -65,7 +64,7 @@ VOLUME /data
 USER appuser
 
 # ========================
-# Stage 3a: stdio target (default for plugin marketplace & uvx-style usage)
+# Stage 3a: stdio target (local builds only; published tags are the http stage)
 # ========================
 FROM runtime AS stdio
 ENV MCP_TRANSPORT=stdio

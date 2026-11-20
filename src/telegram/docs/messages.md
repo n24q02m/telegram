@@ -47,7 +47,7 @@ Search messages (user mode only).
 - **limit**: Max results (default: 20)
 
 ### history
-Get chat message history (user mode only).
+Get chat message history (user mode only; in bot mode it returns an empty list, because the Bot API cannot read chat history).
 - **chat_id** (required): Chat ID or username
 - **limit**: Max messages (default: 20)
 - **offset_id**: Start from this message ID

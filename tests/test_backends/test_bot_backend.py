@@ -208,8 +208,14 @@ async def test_get_history_returns_empty():
 
 async def test_download_media_without_file_id_errors_honestly():
     bot = _make_bot()
-    with pytest.raises(ValueError, match="file_id is required in bot mode"):
+    with pytest.raises(ValueError, match="file_id is required in bot mode") as exc:
         await bot.download_media(123, 42)
+    # The hint must point at results this server returns in bot mode: history
+    # is empty there and nothing lists the messages a bot received.
+    hint = str(exc.value)
+    assert "media(action='send_*')" in hint
+    assert "message(action='forward')" in hint
+    assert "received" not in hint
 
 
 async def test_download_media_with_file_id(tmp_path):

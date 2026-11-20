@@ -88,8 +88,11 @@ mcp-name: io.github.n24q02m/telegram
 # Direct uvx invocation (stdio, bot mode)
 claude mcp add telegram -e TELEGRAM_BOT_TOKEN=123456:ABC-DEF -- uvx n24q02m-telegram
 
-# Docker stdio
-docker run -i --rm -e TELEGRAM_BOT_TOKEN=123456:ABC-DEF n24q02m/telegram
+# Docker: the image runs the HTTP server and needs a config.toml with
+# auth = "token" or "multi" (see HTTP mode)
+docker run --rm -p 127.0.0.1:8080:8080 \
+  -v "$PWD/config.toml:/home/appuser/.telegram/config.toml:ro" \
+  -e TELEGRAM_BOT_TOKEN=123456:ABC-DEF n24q02m/telegram
 ```
 
 The package is `n24q02m-telegram` (formerly `better-telegram-mcp`; the old
@@ -198,6 +201,15 @@ telegram auth --phone +15551234567 --user alice
 
 To reach a server on another machine, put it behind a TLS-terminating reverse
 proxy or a private network and use `token` or `multi` auth.
+
+The Docker image (`n24q02m/telegram`, also `ghcr.io/n24q02m/telegram`) runs
+this HTTP server, not a stdio server: its entrypoint is
+`python -m telegram --http --host 0.0.0.0 --port 8080`, and `MCP_TRANSPORT=stdio`
+does not change that. Because it binds a non-loopback address, the default
+`no-auth` mode exits with status 2. Mount a `config.toml` with `auth = "token"`
+at `/home/appuser/.telegram/config.toml` (for `"multi"`, also mount its
+`users.toml`). For stdio, use `uvx` or
+build the `stdio` stage of the Dockerfile (`docker buildx build --target stdio`).
 
 ## CLI
 

@@ -320,9 +320,11 @@ class BotBackend(TelegramBackend):
         if not file_id:
             raise ValueError(
                 "file_id is required in bot mode: the Bot API cannot look up a "
-                "message's media by (chat_id, message_id). Get file_id from a "
-                "message this bot received (message tool results include it), "
-                "then call media(action='download', file_id=...)."
+                "message's media by (chat_id, message_id), and history is empty "
+                "in bot mode. The message that media(action='send_*') or "
+                "message(action='forward') returns carries file_id in its photo, "
+                "document, voice or video field; pass it to "
+                "media(action='download', file_id=...)."
             )
         info = await self._call("getFile", file_id=file_id)
         file_path = info.get("file_path")
