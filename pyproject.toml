@@ -61,6 +61,17 @@ Issues = "https://github.com/n24q02m/telegram/issues"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.uv]
+# Resolve only releases at least 7 days old, the same hold Renovate's
+# minimumReleaseAge puts on third-party packages. Without it Renovate's
+# artifact step (`uv lock`) and lock file maintenance (`uv lock --upgrade`)
+# pick up releases younger than the hold, and Renovate rejects the branch.
+# n24q02m-hull is released by this stack and consumed right after release,
+# so it is exempt here and in renovate.json alike.
+exclude-newer = "7 days"
+exclude-newer-package = { n24q02m-hull = false }
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/telegram"]
 [tool.hatch.build.targets.wheel.sources]
