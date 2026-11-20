@@ -491,9 +491,11 @@ class UserBackend(TelegramBackend):
 
             await client(EditTitleRequest(channel=chat_id, title=kwargs["title"]))
         if "description" in kwargs:
-            from telethon.tl.functions.channels import EditAboutRequest
+            from telethon.tl.functions.messages import EditChatAboutRequest
 
-            await client(EditAboutRequest(channel=chat_id, about=kwargs["description"]))
+            await client(
+                EditChatAboutRequest(peer=chat_id, about=kwargs["description"])
+            )
         return True
 
     async def manage_topics(
@@ -502,12 +504,12 @@ class UserBackend(TelegramBackend):
         client = self._ensure_client()
         match action:
             case "list":
-                from telethon.tl.functions.channels import GetForumTopicsRequest
+                from telethon.tl.functions.messages import GetForumTopicsRequest
 
                 entity = await client.get_entity(chat_id)
                 result = await client(
                     GetForumTopicsRequest(
-                        channel=entity,
+                        peer=entity,
                         offset_date=None,
                         offset_id=0,
                         offset_topic=0,
@@ -524,22 +526,22 @@ class UserBackend(TelegramBackend):
                 ]
                 return {"topics": topics, "count": len(topics)}
             case "create":
-                from telethon.tl.functions.channels import CreateForumTopicRequest
+                from telethon.tl.functions.messages import CreateForumTopicRequest
 
                 result = await client(
                     CreateForumTopicRequest(
-                        channel=chat_id,
+                        peer=chat_id,
                         title=kwargs.get("name", "Topic"),
                         random_id=0,
                     )
                 )
                 return {"topic_id": result.updates[0].id if result.updates else None}
             case "close":
-                from telethon.tl.functions.channels import EditForumTopicRequest
+                from telethon.tl.functions.messages import EditForumTopicRequest
 
                 await client(
                     EditForumTopicRequest(
-                        channel=chat_id,
+                        peer=chat_id,
                         topic_id=kwargs["topic_id"],
                         closed=True,
                     )

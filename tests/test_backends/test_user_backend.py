@@ -713,52 +713,50 @@ class TestUpdateChatSettings:
         assert result is True
 
     async def test_update_description(self, tmp_path, mock_client, mock_client_class):
+        from telethon.tl.functions.messages import EditChatAboutRequest
+
         from telegram.backends.user_backend import UserBackend
 
         mock_client.return_value = MagicMock()
 
-        # Patch the EditAboutRequest import inside user_backend
-        mock_edit_about = MagicMock()
-        with patch.dict(
-            "sys.modules",
-            {
-                "telethon.tl.functions.channels": MagicMock(
-                    EditTitleRequest=MagicMock(),
-                    EditAboutRequest=mock_edit_about,
-                ),
-            },
-        ):
-            settings = _make_settings(tmp_path)
-            backend = UserBackend(settings)
-            await backend.connect()
+        settings = _make_settings(tmp_path)
+        backend = UserBackend(settings)
+        await backend.connect()
 
-            result = await backend.update_chat_settings(123, description="New desc")
+        result = await backend.update_chat_settings(123, description="New desc")
 
-            assert result is True
+        assert result is True
+        request = mock_client.await_args.args[0]
+        assert isinstance(request, EditChatAboutRequest)
+        assert request.peer == 123
+        assert request.about == "New desc"
 
     async def test_update_both(self, tmp_path, mock_client, mock_client_class):
+        from telethon.tl.functions.channels import EditTitleRequest
+        from telethon.tl.functions.messages import EditChatAboutRequest
+
         from telegram.backends.user_backend import UserBackend
 
         mock_client.return_value = MagicMock()
 
-        with patch.dict(
-            "sys.modules",
-            {
-                "telethon.tl.functions.channels": MagicMock(
-                    EditTitleRequest=MagicMock(),
-                    EditAboutRequest=MagicMock(),
-                ),
-            },
-        ):
-            settings = _make_settings(tmp_path)
-            backend = UserBackend(settings)
-            await backend.connect()
+        settings = _make_settings(tmp_path)
+        backend = UserBackend(settings)
+        await backend.connect()
 
-            result = await backend.update_chat_settings(
-                123, title="Title", description="Desc"
-            )
+        result = await backend.update_chat_settings(
+            123, title="Title", description="Desc"
+        )
 
-            assert result is True
+        assert result is True
+        title_request, about_request = [
+            call.args[0] for call in mock_client.await_args_list
+        ]
+        assert isinstance(title_request, EditTitleRequest)
+        assert title_request.channel == 123
+        assert title_request.title == "Title"
+        assert isinstance(about_request, EditChatAboutRequest)
+        assert about_request.peer == 123
+        assert about_request.about == "Desc"
 
 
 class TestClearCache:
@@ -806,6 +804,8 @@ class TestClearCache:
 
 class TestManageTopics:
     async def test_topics_list(self, tmp_path, mock_client, mock_client_class):
+        from telethon.tl.functions.messages import GetForumTopicsRequest
+
         from telegram.backends.user_backend import UserBackend
 
         mock_entity = MagicMock()
@@ -825,27 +825,28 @@ class TestManageTopics:
         mock_result.topics = [mock_topic1, mock_topic2]
         mock_client.return_value = mock_result
 
-        with patch.dict(
-            "sys.modules",
-            {
-                "telethon.tl.functions.channels": MagicMock(
-                    GetForumTopicsRequest=MagicMock(return_value=MagicMock()),
-                ),
-            },
-        ):
-            settings = _make_settings(tmp_path)
-            backend = UserBackend(settings)
-            await backend.connect()
+        settings = _make_settings(tmp_path)
+        backend = UserBackend(settings)
+        await backend.connect()
 
-            result = await backend.manage_topics(123, "list")
+        result = await backend.manage_topics(123, "list")
 
-            assert result["count"] == 2
-            assert result["topics"][0]["id"] == 1
-            assert result["topics"][0]["title"] == "General"
-            assert result["topics"][1]["id"] == 2
-            assert result["topics"][1]["title"] == "Off-topic"
+        assert result["count"] == 2
+        assert result["topics"][0]["id"] == 1
+        assert result["topics"][0]["title"] == "General"
+        assert result["topics"][1]["id"] == 2
+        assert result["topics"][1]["title"] == "Off-topic"
+        request = mock_client.await_args.args[0]
+        assert isinstance(request, GetForumTopicsRequest)
+        assert request.peer is mock_entity
+        assert request.offset_date is None
+        assert request.offset_id == 0
+        assert request.offset_topic == 0
+        assert request.limit == 100
 
     async def test_topics_create(self, tmp_path, mock_client, mock_client_class):
+        from telethon.tl.functions.messages import CreateForumTopicRequest
+
         from telegram.backends.user_backend import UserBackend
 
         mock_update = MagicMock()
@@ -854,67 +855,57 @@ class TestManageTopics:
         mock_result.updates = [mock_update]
         mock_client.return_value = mock_result
 
-        with patch.dict(
-            "sys.modules",
-            {
-                "telethon.tl.functions.channels": MagicMock(
-                    CreateForumTopicRequest=MagicMock(return_value=MagicMock()),
-                ),
-            },
-        ):
-            settings = _make_settings(tmp_path)
-            backend = UserBackend(settings)
-            await backend.connect()
+        settings = _make_settings(tmp_path)
+        backend = UserBackend(settings)
+        await backend.connect()
 
-            result = await backend.manage_topics(123, "create", name="General")
+        result = await backend.manage_topics(123, "create", name="General")
 
-            assert result["topic_id"] == 42
+        assert result["topic_id"] == 42
+        request = mock_client.await_args.args[0]
+        assert isinstance(request, CreateForumTopicRequest)
+        assert request.peer == 123
+        assert request.title == "General"
 
     async def test_topics_create_no_updates(
         self, tmp_path, mock_client, mock_client_class
     ):
+        from telethon.tl.functions.messages import CreateForumTopicRequest
+
         from telegram.backends.user_backend import UserBackend
 
         mock_result = MagicMock()
         mock_result.updates = []
         mock_client.return_value = mock_result
 
-        with patch.dict(
-            "sys.modules",
-            {
-                "telethon.tl.functions.channels": MagicMock(
-                    CreateForumTopicRequest=MagicMock(return_value=MagicMock()),
-                ),
-            },
-        ):
-            settings = _make_settings(tmp_path)
-            backend = UserBackend(settings)
-            await backend.connect()
+        settings = _make_settings(tmp_path)
+        backend = UserBackend(settings)
+        await backend.connect()
 
-            result = await backend.manage_topics(123, "create", name="General")
+        result = await backend.manage_topics(123, "create", name="General")
 
-            assert result["topic_id"] is None
+        assert result["topic_id"] is None
+        assert isinstance(mock_client.await_args.args[0], CreateForumTopicRequest)
 
     async def test_topics_close(self, tmp_path, mock_client, mock_client_class):
+        from telethon.tl.functions.messages import EditForumTopicRequest
+
         from telegram.backends.user_backend import UserBackend
 
         mock_client.return_value = MagicMock()
 
-        with patch.dict(
-            "sys.modules",
-            {
-                "telethon.tl.functions.channels": MagicMock(
-                    EditForumTopicRequest=MagicMock(return_value=MagicMock()),
-                ),
-            },
-        ):
-            settings = _make_settings(tmp_path)
-            backend = UserBackend(settings)
-            await backend.connect()
+        settings = _make_settings(tmp_path)
+        backend = UserBackend(settings)
+        await backend.connect()
 
-            result = await backend.manage_topics(123, "close", topic_id=42)
+        result = await backend.manage_topics(123, "close", topic_id=42)
 
-            assert result == {"closed": True}
+        assert result == {"closed": True}
+        request = mock_client.await_args.args[0]
+        assert isinstance(request, EditForumTopicRequest)
+        assert request.peer == 123
+        assert request.topic_id == 42
+        assert request.closed is True
 
     async def test_topics_unknown(self, tmp_path, mock_client, mock_client_class):
         from telegram.backends.user_backend import UserBackend
