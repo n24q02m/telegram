@@ -697,9 +697,9 @@ dev = [
 requires-dist = [
     { name = "cryptg", specifier = ">=0.6.1" },
     { name = "cryptography", specifier = ">=50.0.2" },
-    { name = "fastmcp", specifier = ">=4.1.6,<5" },
+    { name = "fastmcp", specifier = ">=4.2.0,<5" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "loguru", specifier = ">=0.7.3" },
+    { name = "loguru", specifier = ">=0.8.0" },
     { name = "n24q02m-hull", specifier = ">=0.8.0,<0.9" },
     { name = "pydantic", specifier = ">=2.14.3,<2.15" },
     { name = "pydantic-settings", specifier = ">=2.14.2,<2.15" },
@@ -712,12 +712,12 @@ requires-dist = [
 dev = [
     { name = "pre-commit", specifier = ">=4.7.0" },
     { name = "pytest", specifier = ">=9.2.0" },
-    { name = "pytest-asyncio", specifier = ">=1.4.1.post1" },
+    { name = "pytest-asyncio", specifier = ">=1.5.0" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pytest-timeout", specifier = ">=2.4.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "ruff", specifier = ">=0.17.4" },
-    { name = "ty", specifier = ">=0.0.100" },
+    { name = "ruff", specifier = ">=0.17.5" },
+    { name = "ty", specifier = ">=0.0.103" },
 ]
 
 [[package]]
