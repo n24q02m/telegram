@@ -6,7 +6,7 @@ Telegram MCP exposes Telegram messaging, chat, media, and contact operations thr
 
 **Version:** `project.version` in `pyproject.toml` is the only source; the release tooling keeps `server.json` and `.claude-plugin/plugin.json` on the same value, and the published version is the latest `n24q02m-telegram` release on PyPI. This file does not repeat the number, so a release never leaves it stale.
 
-The server is built on hull (`n24q02m-hull`, imported as `hull_core`) and standalone FastMCP 3. hull provides the HTTP transport and bearer auth, the encrypted per-plugin credential store, and the shared CLI built-ins. There is no browser credential form, OAuth server, relay or hosted endpoint.
+The server is built on hull (`n24q02m-hull`, imported as `hull_core`) and standalone FastMCP 4. hull provides the HTTP transport and bearer auth, the encrypted per-plugin credential store, and the shared CLI built-ins. There is no browser credential form, OAuth server, relay or hosted endpoint.
 
 The public contract is defined by the repository README, `server.json`, package metadata, and the documented MCP tools.
 

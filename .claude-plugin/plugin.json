@@ -6,7 +6,7 @@
     "TELEGRAM_BOT_TOKEN": {
       "type": "string",
       "title": "Bot token (bot mode)",
-      "description": "From @BotFather. Required for stdio bot mode. Leave empty for user mode (HTTP only).",
+      "description": "From @BotFather, for bot mode. Leave empty to use credentials saved by `telegram auth` (`--bot-token <token>`, or `--phone <+number>` for user mode).",
       "sensitive": true,
       "required": false
     }

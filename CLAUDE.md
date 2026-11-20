@@ -2,7 +2,7 @@
 
 MCP server for Telegram. Python 3.13, uv, hatchling, src layout. Built on
 [hull](https://github.com/n24q02m/hull) (`n24q02m-hull`, imported as
-`hull_core`) and standalone FastMCP 3.
+`hull_core`) and standalone FastMCP 4.
 
 Dual mode: Bot API (httpx) and MTProto user accounts (Telethon).
 6 tools: `message`, `chat`, `media`, `contact`, `config`, `help`.
@@ -151,8 +151,8 @@ stored in the environment.
 - Conventional Commits (`fix:` / `feat:`). Tag format: `v{version}`.
 - CD: semantic release -> PyPI `n24q02m-telegram` -> Docker multi-arch
   (`n24q02m/telegram`, `ghcr.io/n24q02m/telegram`) -> MCP Registry.
-- `n24q02m-hull` is pinned to a git commit until it is published to PyPI;
-  replace it with a version range before the next PyPI release.
+- `n24q02m-hull` comes from PyPI under the range in `[project].dependencies`
+  of `pyproject.toml`.
 
 ## Pre-commit hooks
 

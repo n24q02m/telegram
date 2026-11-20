@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PreToolUse hook: block when better-telegram-mcp credentials are not configured.
+"""PreToolUse hook: block when telegram credentials are not configured.
 
 Blocking -- Telegram tools cannot function without credentials.
 Allows config and help tools through so the user can initiate setup.
@@ -39,7 +39,16 @@ except ImportError:
 SERVER_NAME = "better-telegram-mcp"
 # Either TELEGRAM_PHONE (user mode) or TELEGRAM_BOT_TOKEN (bot mode) is required.
 # TELEGRAM_API_ID / TELEGRAM_API_HASH have built-in defaults and are not checked here.
-CREDENTIAL_KEYS = ["TELEGRAM_PHONE", "TELEGRAM_BOT_TOKEN"]
+# Claude Code passes the plugin's TELEGRAM_BOT_TOKEN option to hooks as
+# CLAUDE_PLUGIN_OPTION_TELEGRAM_BOT_TOKEN; only the server gets TELEGRAM_BOT_TOKEN.
+CREDENTIAL_KEYS = [
+    "TELEGRAM_PHONE",
+    "TELEGRAM_BOT_TOKEN",
+    "CLAUDE_PLUGIN_OPTION_TELEGRAM_BOT_TOKEN",
+]
+# `telegram auth` saves credentials to hull's store at ~/.telegram/config.json;
+# hull also reads the pre-rename ~/.telegram-mcp/ and ~/.better-telegram-mcp/.
+STORE_DIRS = (".telegram", ".telegram-mcp", ".better-telegram-mcp")
 # Tools that work without credentials
 EXEMPT_SUFFIXES = ("__setup", "__help", "__config")
 
@@ -48,7 +57,11 @@ def _is_configured() -> bool:
     for k in CREDENTIAL_KEYS:
         if os.environ.get(k):
             return True
-    config_file = os.path.expanduser("~") + "/.config/mcp/config.enc"
+    home = os.path.expanduser("~")
+    for store_dir in STORE_DIRS:
+        if os.path.exists(os.path.join(home, store_dir, "config.json")):
+            return True
+    config_file = home + "/.config/mcp/config.enc"
     if os.path.exists(config_file):
         return True
     return False
@@ -69,10 +82,12 @@ def main() -> None:
                 {
                     "decision": "block",
                     "reason": (
-                        "better-telegram-mcp credentials not configured. "
-                        "Set TELEGRAM_PHONE (user mode) or TELEGRAM_BOT_TOKEN (bot mode) "
-                        "in your MCP server environment, "
-                        "or use the config tool with action='status' for setup instructions."
+                        "telegram credentials not configured. "
+                        "Set the plugin's TELEGRAM_BOT_TOKEN option (bot mode), "
+                        "or run `telegram auth --bot-token <token>` or "
+                        "`telegram auth --phone <+number>` (user mode) in a terminal, "
+                        "then restart Claude Code. "
+                        "Check the result with `telegram status`."
                     ),
                 }
             )

@@ -14,9 +14,13 @@
       "identifier": "n24q02m-telegram",
       "version": "4.25.1-beta.1",
       "runtimeHint": "uvx",
-      "runtimeArgs": [
-        "--python",
-        "3.13"
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--python",
+          "value": "3.13",
+          "description": "Python interpreter version for uvx"
+        }
       ],
       "transport": {
         "type": "stdio"
@@ -29,13 +33,19 @@
           "name": "TELEGRAM_BOT_TOKEN"
         },
         {
-          "description": "Telegram API ID from my.telegram.org (for user mode)",
+          "description": "Phone number in +<country><number> form for user mode (or save it once with `telegram auth --phone`)",
+          "isRequired": false,
+          "isSecret": false,
+          "name": "TELEGRAM_PHONE"
+        },
+        {
+          "description": "Optional Telegram API ID from my.telegram.org; overrides the bundled public API pair",
           "isRequired": false,
           "isSecret": false,
           "name": "TELEGRAM_API_ID"
         },
         {
-          "description": "Telegram API hash from my.telegram.org (for user mode)",
+          "description": "Optional Telegram API hash from my.telegram.org; overrides the bundled public API pair",
           "isRequired": false,
           "isSecret": true,
           "name": "TELEGRAM_API_HASH"
@@ -46,8 +56,39 @@
       "registryType": "oci",
       "identifier": "docker.io/n24q02m/telegram:latest",
       "runtimeHint": "docker",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "-p",
+          "value": "127.0.0.1:8080:8080",
+          "description": "Publish the image's HTTP port (8080) on loopback"
+        },
+        {
+          "type": "named",
+          "name": "-v",
+          "value": "{config_toml}:/home/appuser/.telegram/config.toml:ro",
+          "description": "Mount a config.toml whose [server] auth is \"token\" (token_hash from `telegram token hash`); the image binds 0.0.0.0, which \"no-auth\" refuses",
+          "isRequired": true,
+          "variables": {
+            "config_toml": {
+              "description": "Path to the config.toml on the host",
+              "format": "filepath",
+              "isRequired": true
+            }
+          }
+        }
+      ],
       "transport": {
-        "type": "stdio"
+        "type": "streamable-http",
+        "url": "http://127.0.0.1:8080/mcp",
+        "headers": [
+          {
+            "name": "Authorization",
+            "description": "Bearer <token>, the token whose hash is token_hash in the mounted config.toml",
+            "isRequired": true,
+            "isSecret": true
+          }
+        ]
       },
       "environmentVariables": [
         {

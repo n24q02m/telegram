@@ -32,4 +32,5 @@ Send a video.
 Download media from a message.
 - **chat_id** (required): Chat ID or username
 - **message_id** (required): Message containing media
-- **output_dir**: Directory to save file (default: current directory)
+- **file_id**: Required in bot mode, because the Bot API cannot look up a message's media by `chat_id` and `message_id`. Ignored in user mode.
+- **output_dir**: Directory to save file (default: the system temp directory in bot mode, the server's working directory in user mode)

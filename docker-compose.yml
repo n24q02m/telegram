@@ -1,5 +1,5 @@
-# Base compose file — stdio mode (default).
-# For HTTP mode, layer the overlay:
+# Base compose file. The image runs the HTTP server (the Dockerfile's final
+# `http` stage), so layer the overlay, which publishes the port:
 #   docker compose -f docker-compose.yml -f docker-compose.http.yml up
 services:
   telegram:

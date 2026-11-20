@@ -1,7 +1,8 @@
 # HTTP mode overlay — use with:
 # docker compose -f docker-compose.yml -f docker-compose.http.yml up
-# The server reads /home/appuser/.telegram/config.toml; set auth = "token" or
-# "multi" there, because "no-auth" refuses the container's non-loopback bind.
+# The server reads /home/appuser/.telegram/config.toml, mounted from
+# ./config.toml; set auth = "token" or "multi" there, because "no-auth"
+# refuses the container's non-loopback bind.
 services:
   telegram:
     environment:
@@ -10,5 +11,6 @@ services:
       - "127.0.0.1:8081:8080"
     volumes:
       - telegram-data:/data
+      - ./config.toml:/home/appuser/.telegram/config.toml:ro
 volumes:
   telegram-data:
