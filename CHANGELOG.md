@@ -2,6 +2,49 @@
 
 <!-- version list -->
 
+## v4.26.0-beta.1 (2026-11-21)
+
+### Bug Fixes
+
+- Align docker, registry, plugin and hook docs with the http image and saved credentials
+  ([#1205](https://github.com/n24q02m/telegram/pull/1205),
+  [`6fa6b64`](https://github.com/n24q02m/telegram/commit/6fa6b6408d2443b8d9c445f531021dbf3a8baf22))
+
+- Launch telegram with Python 3.13 and @latest in every documented uvx command
+  ([#1211](https://github.com/n24q02m/telegram/pull/1211),
+  [`cffca7d`](https://github.com/n24q02m/telegram/commit/cffca7d6c46c4b9c2cbeaedbd3115831cd07bacc))
+
+- Let Renovate digest updates clear the release-age hold
+  ([#1208](https://github.com/n24q02m/telegram/pull/1208),
+  [`daa24c0`](https://github.com/n24q02m/telegram/commit/daa24c01530b7e50d74228408708fa7c291002b1))
+
+- Resolve dependencies under the same 7-day hold as Renovate
+  ([#1207](https://github.com/n24q02m/telegram/pull/1207),
+  [`0885090`](https://github.com/n24q02m/telegram/commit/0885090c9036dedbdbd5c871019ed126b61c75b6))
+
+- Use telethon messages requests for chat description and forum topics
+  ([#1206](https://github.com/n24q02m/telegram/pull/1206),
+  [`ba29cc8`](https://github.com/n24q02m/telegram/commit/ba29cc82b0e569392c82e0bd5cd10d35bff5a2dc))
+
+- **deps**: Lock file maintenance ([#1209](https://github.com/n24q02m/telegram/pull/1209),
+  [`8fe5d82`](https://github.com/n24q02m/telegram/commit/8fe5d825062393fd2af1556ca43bb7f2d494a0a0))
+
+- **deps**: Lock file maintenance ([#1204](https://github.com/n24q02m/telegram/pull/1204),
+  [`ad633f4`](https://github.com/n24q02m/telegram/commit/ad633f45feac0dd6dd582e7b824bb75fefe7aa21))
+
+- **deps**: Update n24q02m-telegram to >=4.24.0
+  ([#1203](https://github.com/n24q02m/telegram/pull/1203),
+  [`680fda6`](https://github.com/n24q02m/telegram/commit/680fda60950486603c83b82d4a4f4ba6449d2cc3))
+
+- **deps**: Update patch dependencies ([#1202](https://github.com/n24q02m/telegram/pull/1202),
+  [`5787613`](https://github.com/n24q02m/telegram/commit/57876139f9adc4672c19b642edf3d5cd11f432dc))
+
+### Features
+
+- Sync cross-promo section ([#1210](https://github.com/n24q02m/telegram/pull/1210),
+  [`de9ed07`](https://github.com/n24q02m/telegram/commit/de9ed07a06f0ee946596d6930da4e3f40de7d87f))
+
+
 ## v4.25.1-beta.1 (2026-11-17)
 
 ### Bug Fixes
