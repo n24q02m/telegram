@@ -85,7 +85,7 @@ mcp-name: io.github.n24q02m/telegram
 /plugin install telegram@n24q02m-plugins
 
 # Direct uvx invocation (stdio, bot mode)
-claude mcp add telegram -e TELEGRAM_BOT_TOKEN=123456:ABC-DEF -- uvx n24q02m-telegram
+claude mcp add telegram -e TELEGRAM_BOT_TOKEN=123456:ABC-DEF -- uvx --python 3.13 n24q02m-telegram@latest
 
 # Docker: the image runs the HTTP server and needs a config.toml with
 # auth = "token" or "multi" (see HTTP mode)
@@ -140,7 +140,7 @@ stdio server prints these instructions to stderr and exits with status 1.
 
 Also listed on [Smithery](https://smithery.ai/servers/n24q02m/better-telegram-mcp).
 Per [`smithery.yaml`](smithery.yaml), Smithery starts the server over **stdio** with
-`uvx --python 3.13 n24q02m-telegram` and takes **no install-time configuration**
+`uvx --python 3.13 n24q02m-telegram@latest` and takes **no install-time configuration**
 (empty `configSchema`). Credentials come from the `TELEGRAM_BOT_TOKEN` env var or
 a prior `telegram auth` (see [Setup](#setup)).
 
