@@ -717,7 +717,7 @@ dev = [
     { name = "pytest-timeout", specifier = ">=2.4.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "ruff", specifier = ">=0.17.5" },
-    { name = "ty", specifier = ">=0.0.103" },
+    { name = "ty", specifier = ">=0.0.104" },
 ]
 
 [[package]]
