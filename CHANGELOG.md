@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v4.26.0-beta.2 (2026-11-22)
+
+### Bug Fixes
+
+- **deps**: Update ty to >=0.0.104 ([#1212](https://github.com/n24q02m/telegram/pull/1212),
+  [`665446e`](https://github.com/n24q02m/telegram/commit/665446ebf10bd2a526425345f40467564715b86d))
+
+
 ## v4.26.0-beta.1 (2026-11-21)
 
 ### Bug Fixes
