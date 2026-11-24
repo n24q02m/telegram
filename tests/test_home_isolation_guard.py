@@ -29,7 +29,7 @@ from telegram.credential_state import PLUGIN_NAME, _write_single_user_config
 # Captured at import time: collection runs before any fixture, so this is the
 # genuine home directory, whatever the fixture later redirects Path.home() to.
 _REAL_HOME = Path(os.path.expanduser("~")).resolve()
-_REAL_STORE_DIR = _REAL_HOME / ".telegram"
+_REAL_STORE_DIR = _REAL_HOME / ".n24q02m" / "telegram"
 _REAL_LEGACY_PATH = legacy_config_file.default_legacy_config_path().resolve()
 
 FAKE_TOKEN = "123456:" + "G" * 35
@@ -83,7 +83,7 @@ def test_single_user_write_stays_out_of_the_real_store():
     before = _snapshot(_REAL_STORE_DIR)
     _write_single_user_config({"TELEGRAM_BOT_TOKEN": FAKE_TOKEN})
 
-    written = sorted(Path.home().glob(".telegram/*"))
+    written = sorted(Path.home().glob(".n24q02m/telegram/*"))
     assert written, "expected the LocalFsBackend write to land in the tmp home"
     for path in written:
         assert _REAL_STORE_DIR not in path.resolve().parents

@@ -51,11 +51,13 @@ def namespace_data_dir(namespace: str) -> Path:
     return Settings().data_dir / "subs" / validate_sub(namespace)
 
 
-def settings_for_namespace(namespace: str) -> Settings | None:
+def settings_for_namespace(
+    namespace: str, *, account: str | None = None
+) -> Settings | None:
     """Settings from the credentials saved for ``namespace``, or ``None``."""
     from ..credential_state import _read_single_user_config
 
-    saved = _read_single_user_config(namespace)
+    saved = _read_single_user_config(namespace, account=account)
     if not saved or not (
         saved.get("TELEGRAM_BOT_TOKEN") or saved.get("TELEGRAM_PHONE")
     ):

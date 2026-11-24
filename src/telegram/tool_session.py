@@ -28,33 +28,62 @@ def _user_flag(namespace: str) -> str:
     return "" if namespace == DEFAULT_NAMESPACE else f" --user {namespace}"
 
 
-def not_configured_hint(namespace: str = DEFAULT_NAMESPACE) -> str:
-    """Operator action that makes ``namespace`` usable from the CLI."""
-    flag = _user_flag(namespace)
+def _account_flag(account: str | None) -> str:
+    return "" if not account else f" --account {account}"
+
+
+def not_configured_hint(
+    namespace: str = DEFAULT_NAMESPACE, account: str | None = None
+) -> str:
+    """Operator action that makes ``namespace`` (and optional ``account``) usable."""
+    flag = f"{_user_flag(namespace)}{_account_flag(account)}"
+    target = (
+        f"account {account!r} in namespace {namespace!r}"
+        if account
+        else f"namespace {namespace!r}"
+    )
     return (
-        f"no Telegram credentials for namespace {namespace!r}; run "
+        f"no Telegram credentials for {target}; run "
         f"`telegram auth --bot-token <token>{flag}` (bot mode, token from "
         f"@BotFather) or `telegram auth --phone <+number>{flag}` (user mode)"
     )
 
 
-def load_settings(namespace: str = DEFAULT_NAMESPACE) -> Settings | None:
-    """Settings for ``namespace``, or ``None`` when nothing is configured.
+def load_settings(
+    namespace: str = DEFAULT_NAMESPACE, *, account: str | None = None
+) -> Settings | None:
+    """Settings for ``namespace`` (and optional named ``account``), or ``None``.
 
-    Environment variables win for the ``default`` namespace; otherwise the
-    credentials saved by ``telegram auth`` are loaded explicitly (never
-    exported into ``os.environ``, which would leak them to every subprocess).
+    An explicit account (flag or ``TELEGRAM_ACCOUNT``) reads the named account
+    registry directly; otherwise environment variables win for ``default``,
+    falling back to the active stored credentials.
     """
+    from .credential_state import (
+        _read_single_user_config,
+        resolve_account_name,
+        resolve_credential_state,
+    )
+
+    acct = resolve_account_name(account)
     if namespace != DEFAULT_NAMESPACE:
         from .auth.telegram_auth_provider import settings_for_namespace
 
-        return settings_for_namespace(namespace)
+        return (
+            settings_for_namespace(namespace)
+            if acct is None
+            else settings_for_namespace(namespace, account=acct)
+        )
+
+    if acct is not None:
+        saved = _read_single_user_config(account=acct)
+        if not saved:
+            return None
+        saved_settings = Settings.from_saved_config(saved)
+        return saved_settings if saved_settings.is_configured else None
 
     settings = Settings()
     if settings.is_configured:
         return settings
-
-    from .credential_state import _read_single_user_config, resolve_credential_state
 
     if resolve_credential_state() is not CredentialState.CONFIGURED:
         return None
@@ -67,12 +96,19 @@ def load_settings(namespace: str = DEFAULT_NAMESPACE) -> Settings | None:
 
 @asynccontextmanager
 async def connected_backend(
-    namespace: str = DEFAULT_NAMESPACE,
+    namespace: str = DEFAULT_NAMESPACE, *, account: str | None = None
 ) -> AsyncGenerator[TelegramBackend]:
     """Connect a backend for one tool call and disconnect it afterwards."""
-    settings = load_settings(namespace)
+    from .credential_state import resolve_account_name
+
+    acct = resolve_account_name(account)
+    settings = (
+        load_settings(namespace)
+        if acct is None
+        else load_settings(namespace, account=acct)
+    )
     if settings is None:
-        raise ToolSessionError(not_configured_hint(namespace))
+        raise ToolSessionError(not_configured_hint(namespace, account=acct))
 
     from .auth.telegram_auth_provider import create_backend
 
@@ -83,7 +119,7 @@ async def connected_backend(
             raise ToolSessionError(
                 f"the Telegram session of namespace {namespace!r} is not "
                 "authorized; run "
-                f"`telegram auth --phone <+number>{_user_flag(namespace)}` on "
+                f"`telegram auth --phone <+number>{_user_flag(namespace)}{_account_flag(acct)}` on "
                 "this machine, then retry"
             )
         yield backend

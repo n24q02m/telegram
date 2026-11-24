@@ -60,7 +60,7 @@ def _write_config(body: str) -> None:
 def test_config_dir_is_dot_telegram_under_home(tmp_path):
     from pathlib import Path
 
-    assert config_dir() == Path.home() / ".telegram"
+    assert config_dir() == Path.home() / ".n24q02m" / "telegram"
 
 
 def test_default_settings_bind_loopback_without_config_file():

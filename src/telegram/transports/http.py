@@ -25,12 +25,15 @@ CONFIG_DIR_NAME = ".telegram"
 
 
 def config_dir() -> Path:
-    """Directory holding ``config.toml`` (and ``users.toml``): ``~/.telegram``."""
-    return Path.home() / CONFIG_DIR_NAME
+    """Directory holding ``config.toml`` (and ``users.toml``): ``~/.n24q02m/telegram``."""
+    from hull_core.storage import data_dir, migrate_legacy_data_dir
+
+    migrate_legacy_data_dir("telegram")
+    return data_dir("telegram")
 
 
 def load_http_settings() -> HullSettings:
-    """hull settings from ``~/.telegram/config.toml`` (defaults when absent)."""
+    """hull settings from ``~/.n24q02m/telegram/config.toml`` (defaults when absent)."""
     return load_settings(config_dir())
 
 
