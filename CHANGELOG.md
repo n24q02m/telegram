@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v4.27.0-beta.1 (2026-11-24)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance ([#1215](https://github.com/n24q02m/telegram/pull/1215),
+  [`bcb247d`](https://github.com/n24q02m/telegram/commit/bcb247d23600174c4f1cec0f016d34007e6bafba))
+
+### Features
+
+- Add python 3.15 support and hull v2 profiles and named accounts
+  ([#1216](https://github.com/n24q02m/telegram/pull/1216),
+  [`aeb8374`](https://github.com/n24q02m/telegram/commit/aeb8374a6b27394d8a09c8981ee6b25427603817))
+
+
 ## v4.26.1 (2026-11-23)
 
 
