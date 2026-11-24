@@ -30,5 +30,9 @@ def check_saved_sessions() -> bool:
     data_dir = Settings().data_dir
     if not data_dir.exists():
         return False
+    if (data_dir / "session.json").is_file() or any(
+        data_dir.glob("profiles/*/session.json")
+    ):
+        return True
     sessions = list(data_dir.glob("*.session"))
     return len(sessions) > 0

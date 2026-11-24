@@ -540,3 +540,64 @@ class TestNamespaceAndSessions:
     def test_not_configured_hint_names_the_namespace(self):
         assert "--user alice" in not_configured_hint("alice")
         assert "--user" not in not_configured_hint()
+
+
+class TestMessageScheduleAndDraftCLI:
+    def test_schedule_and_draft_flags_forward(self, capsys, mock_backend):
+        mock_backend.schedule_message = AsyncMock(
+            return_value={"scheduled": True, "message_id": 88}
+        )
+        mock_backend.manage_draft = AsyncMock(
+            return_value={"chat_id": 42, "saved": True, "text": "wip"}
+        )
+        with _stubbed(mock_backend):
+            rc1, out1, err1 = _run(
+                capsys,
+                [
+                    "message",
+                    "schedule",
+                    "--chat-id",
+                    "42",
+                    "--text",
+                    "hello",
+                    "--schedule-at",
+                    "2026-12-01T09:00:00Z",
+                    "--json",
+                ],
+            )
+            rc2, out2, err2 = _run(
+                capsys,
+                [
+                    "message",
+                    "draft",
+                    "--chat-id",
+                    "42",
+                    "--text",
+                    "wip",
+                    "--draft-action",
+                    "save",
+                    "--json",
+                ],
+            )
+        assert (rc1, err1) == (0, "")
+        assert json.loads(out1)["scheduled"] is True
+        mock_backend.schedule_message.assert_awaited_once_with(
+            42,
+            "send",
+            text="hello",
+            schedule_at="2026-12-01T09:00:00Z",
+            message_id=None,
+            reply_to=None,
+            parse_mode=None,
+            limit=20,
+        )
+        assert (rc2, err2) == (0, "")
+        assert json.loads(out2)["saved"] is True
+        mock_backend.manage_draft.assert_awaited_once_with(
+            "save",
+            chat_id=42,
+            text="wip",
+            reply_to=None,
+            parse_mode=None,
+            limit=20,
+        )

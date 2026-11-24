@@ -39,8 +39,11 @@ async def run_message(
     query: str | None = None,
     limit: int = 20,
     offset_id: int | None = None,
+    schedule_at: str | None = None,
+    schedule_action: str | None = None,
+    draft_action: str | None = None,
 ) -> dict[str, Any]:
-    """Run one ``message`` tool action (send/edit/delete/.../history)."""
+    """Run one ``message`` tool action (send/edit/delete/.../history/schedule/draft)."""
     args = MessagesArgs(
         action=action,
         chat_id=chat_id,
@@ -54,6 +57,9 @@ async def run_message(
         query=query,
         limit=limit,
         offset_id=offset_id,
+        schedule_at=schedule_at,
+        schedule_action=schedule_action,
+        draft_action=draft_action,
     )
     return await handle_messages(backend, args)
 

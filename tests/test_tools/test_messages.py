@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from telegram.backends.base import ModeError
@@ -207,4 +209,48 @@ async def test_unknown_action_suggestion(mock_backend):
     assert "error" in result
     assert "Unknown action 'sendd'." in result["error"]
     assert "Did you mean 'send'?" in result["error"]
-    assert "Valid: delete|edit|forward|history|pin|react|search|send" in result["error"]
+    assert (
+        "Valid: delete|draft|edit|forward|history|pin|react|schedule|search|send"
+        in result["error"]
+    )
+
+
+async def test_schedule_dispatch_and_validation(mock_backend):
+    mock_backend.schedule_message = AsyncMock(
+        return_value={"scheduled": True, "message_id": 9}
+    )
+    res = await handle_messages(
+        mock_backend,
+        MessagesArgs(
+            action="schedule",
+            chat_id=123,
+            text="ping",
+            schedule_at="2026-12-01T09:00:00Z",
+        ),
+    )
+    assert res["scheduled"] is True
+    err_no_chat = await handle_messages(mock_backend, MessagesArgs(action="schedule"))
+    assert "requires chat_id" in err_no_chat["error"]
+    err_no_time = await handle_messages(
+        mock_backend, MessagesArgs(action="schedule", chat_id=123, text="ping")
+    )
+    assert "requires chat_id, text, and schedule_at" in err_no_time["error"]
+    err_del = await handle_messages(
+        mock_backend,
+        MessagesArgs(action="schedule", chat_id=123, schedule_action="delete"),
+    )
+    assert "requires chat_id and message_id" in err_del["error"]
+
+
+async def test_draft_dispatch_and_validation(mock_backend):
+    mock_backend.manage_draft = AsyncMock(return_value={"drafts": [], "count": 0})
+    res = await handle_messages(mock_backend, MessagesArgs(action="draft"))
+    assert res == {"drafts": [], "count": 0}
+    err_save = await handle_messages(
+        mock_backend, MessagesArgs(action="draft", draft_action="save")
+    )
+    assert "requires chat_id and text" in err_save["error"]
+    err_clear = await handle_messages(
+        mock_backend, MessagesArgs(action="draft", draft_action="clear")
+    )
+    assert "requires chat_id" in err_clear["error"]

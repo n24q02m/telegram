@@ -198,6 +198,32 @@ class BotBackend(TelegramBackend):
     async def leave_chat(self, chat_id: str | int) -> bool:
         return await self._call("leaveChat", chat_id=chat_id)
 
+    async def schedule_message(
+        self,
+        chat_id: str | int,
+        action: str = "send",
+        *,
+        text: str | None = None,
+        schedule_at: str | None = None,
+        message_id: int | None = None,
+        reply_to: int | None = None,
+        parse_mode: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        raise ModeError("user")
+
+    async def manage_draft(
+        self,
+        action: str = "get",
+        *,
+        chat_id: str | int | None = None,
+        text: str | None = None,
+        reply_to: int | None = None,
+        parse_mode: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        raise ModeError("user")
+
     async def get_members(
         self, chat_id: str | int, *, limit: int = 50
     ) -> list[dict[str, Any]]:

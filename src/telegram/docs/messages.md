@@ -1,6 +1,6 @@
 # Telegram Messages
 
-Manage messages: send, edit, delete, forward, pin, react, search, and browse history.
+Manage messages: send, schedule, drafts, edit, delete, forward, pin, react, search, and browse history.
 
 ## Actions
 
@@ -51,3 +51,23 @@ Get chat message history (user mode only; in bot mode it returns an empty list, 
 - **chat_id** (required): Chat ID or username
 - **limit**: Max messages (default: 20)
 - **offset_id**: Start from this message ID
+
+### schedule
+Schedule messages or manage scheduled messages (user mode only).
+- **chat_id** (required): Chat ID or username
+- **schedule_action**: `"send"` (default), `"list"`, or `"delete"`
+- **text** (required for `send`): Message text
+- **schedule_at** (required for `send`): ISO-8601 timestamp or Unix epoch seconds
+- **message_id** (required for `delete`): Scheduled message ID
+- **reply_to**: Message ID to reply to (`send`)
+- **parse_mode**: "HTML" or "Markdown" (`send`)
+- **limit**: Max scheduled messages (`list`, default: 20)
+
+### draft
+Save, inspect, or clear cloud message drafts (user mode only).
+- **draft_action**: `"save"`, `"get"` (default when `text` omitted), or `"clear"`
+- **chat_id** (required for `save` / `clear`; optional filter for `get`): Chat ID or username
+- **text** (required for `save`): Draft message text
+- **reply_to**: Message ID to reply to (`save`)
+- **parse_mode**: "HTML" or "Markdown" (`save`)
+- **limit**: Max drafts when listing (`get`, default: 20)

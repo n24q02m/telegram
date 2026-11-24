@@ -258,8 +258,11 @@ async def message(
     query: str | None = None,
     limit: int = 20,
     offset_id: int | None = None,
+    schedule_at: str | None = None,
+    schedule_action: str | None = None,
+    draft_action: str | None = None,
 ) -> dict[str, Any]:
-    """Send, edit, delete, forward, pin, react, search, and get message history.
+    """Send, edit, delete, forward, pin, react, search, schedule, draft, and get message history.
 
     Actions (chat_id: "@username" | int):
     - send (chat_id, text -> reply_to, parse_mode)
@@ -270,6 +273,8 @@ async def message(
     - react (chat_id, message_id, emoji)
     - search (query -> chat_id, limit=20)
     - history (chat_id -> limit=20, offset_id)
+    - schedule (chat_id, text, schedule_at -> schedule_action=send|list|delete, message_id, reply_to, parse_mode, limit=20)
+    - draft (chat_id, text -> draft_action=save|get|clear, reply_to, parse_mode, limit=20)
     """
     backend = await _ready_backend()
     if backend is None:
@@ -289,6 +294,9 @@ async def message(
         query=query,
         limit=limit,
         offset_id=offset_id,
+        schedule_at=schedule_at,
+        schedule_action=schedule_action,
+        draft_action=draft_action,
     )
 
 

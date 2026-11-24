@@ -702,3 +702,15 @@ async def test_send_media_file_too_large(tmp_path):
         mock_stat.return_value.st_size = 50 * 1024 * 1024 + 1
         with pytest.raises(SecurityError, match="File size exceeds maximum allowed"):
             await bot.send_media(123, "document", str(f))
+
+
+async def test_schedule_message_raises_mode_error():
+    bot = _make_bot()
+    with pytest.raises(ModeError, match="requires user mode"):
+        await bot.schedule_message(123, "send", text="hi", schedule_at="1800000000")
+
+
+async def test_manage_draft_raises_mode_error():
+    bot = _make_bot()
+    with pytest.raises(ModeError, match="requires user mode"):
+        await bot.manage_draft("get", chat_id=123)

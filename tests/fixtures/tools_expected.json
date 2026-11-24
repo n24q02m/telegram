@@ -7,11 +7,10 @@
       "readOnlyHint": false,
       "title": "Telegram Messages"
     },
-    "description": "Send, edit, delete, forward, pin, react, search, and get message history.\n\nActions (chat_id: \"@username\" | int):\n- send (chat_id, text -> reply_to, parse_mode)\n- edit (chat_id, message_id, text -> parse_mode)\n- delete (chat_id, message_id)\n- forward (from_chat, to_chat, message_id)\n- pin (chat_id, message_id)\n- react (chat_id, message_id, emoji)\n- search (query -> chat_id, limit=20)\n- history (chat_id -> limit=20, offset_id)\n",
+    "description": "Send, edit, delete, forward, pin, react, search, schedule, draft, and get message history.\n\nActions (chat_id: \"@username\" | int):\n- send (chat_id, text -> reply_to, parse_mode)\n- edit (chat_id, message_id, text -> parse_mode)\n- delete (chat_id, message_id)\n- forward (from_chat, to_chat, message_id)\n- pin (chat_id, message_id)\n- react (chat_id, message_id, emoji)\n- search (query -> chat_id, limit=20)\n- history (chat_id -> limit=20, offset_id)\n- schedule (chat_id, text, schedule_at -> schedule_action=send|list|delete, message_id, reply_to, parse_mode, limit=20)\n- draft (chat_id, text -> draft_action=save|get|clear, reply_to, parse_mode, limit=20)\n",
     "inputSchema": {
       "properties": {
         "action": {
-          "title": "Action",
           "type": "string"
         },
         "chat_id": {
@@ -26,10 +25,9 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Chat Id"
+          "default": null
         },
-        "emoji": {
+        "text": {
           "anyOf": [
             {
               "type": "string"
@@ -38,8 +36,40 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Emoji"
+          "default": null
+        },
+        "message_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reply_to": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "parse_mode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "from_chat": {
           "anyOf": [
@@ -53,85 +83,7 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "From Chat"
-        },
-        "limit": {
-          "default": 20,
-          "title": "Limit",
-          "type": "integer"
-        },
-        "message_id": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Message Id"
-        },
-        "offset_id": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Offset Id"
-        },
-        "parse_mode": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Parse Mode"
-        },
-        "query": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Query"
-        },
-        "reply_to": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Reply To"
-        },
-        "text": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Text"
+          "default": null
         },
         "to_chat": {
           "anyOf": [
@@ -145,8 +97,77 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "To Chat"
+          "default": null
+        },
+        "emoji": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "query": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "limit": {
+          "default": 20,
+          "type": "integer"
+        },
+        "offset_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schedule_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schedule_action": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "draft_action": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [

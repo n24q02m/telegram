@@ -20,6 +20,9 @@ class MessagesArgs(BaseModel):
     query: str | None = None
     limit: int = 20
     offset_id: int | None = None
+    schedule_at: str | None = None
+    schedule_action: str | None = None
+    draft_action: str | None = None
 
 
 async def _handle_send(backend: TelegramBackend, args: MessagesArgs) -> dict[str, Any]:
@@ -106,6 +109,46 @@ async def _handle_history(
     return ok({"messages": results, "count": len(results)})
 
 
+async def _handle_schedule(
+    backend: TelegramBackend, args: MessagesArgs
+) -> dict[str, Any]:
+    sub = args.schedule_action or "send"
+    if not args.chat_id:
+        return err("'schedule' requires chat_id")
+    if sub == "send" and (not args.text or not args.schedule_at):
+        return err("'schedule' (send) requires chat_id, text, and schedule_at")
+    if sub == "delete" and args.message_id is None:
+        return err("'schedule' (delete) requires chat_id and message_id")
+    result = await backend.schedule_message(
+        args.chat_id,
+        sub,
+        text=args.text,
+        schedule_at=args.schedule_at,
+        message_id=args.message_id,
+        reply_to=args.reply_to,
+        parse_mode=args.parse_mode,
+        limit=args.limit,
+    )
+    return ok(result)
+
+
+async def _handle_draft(backend: TelegramBackend, args: MessagesArgs) -> dict[str, Any]:
+    sub = args.draft_action or ("save" if args.text is not None else "get")
+    if sub in {"save", "set"} and (not args.chat_id or args.text is None):
+        return err("'draft' (save) requires chat_id and text")
+    if sub in {"clear", "delete"} and not args.chat_id:
+        return err("'draft' (clear) requires chat_id")
+    result = await backend.manage_draft(
+        sub,
+        chat_id=args.chat_id,
+        text=args.text,
+        reply_to=args.reply_to,
+        parse_mode=args.parse_mode,
+        limit=args.limit,
+    )
+    return ok(result)
+
+
 _ACTION_HANDLERS: dict[
     str, Callable[[TelegramBackend, MessagesArgs], Coroutine[Any, Any, dict[str, Any]]]
 ] = {
@@ -117,6 +160,8 @@ _ACTION_HANDLERS: dict[
     "react": _handle_react,
     "search": _handle_search,
     "history": _handle_history,
+    "schedule": _handle_schedule,
+    "draft": _handle_draft,
 }
 
 
