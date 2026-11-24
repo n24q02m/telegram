@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v4.27.0-beta.2 (2026-11-24)
+
+### Bug Fixes
+
+- Update POSIX session permission test for encrypted StringSession
+  ([#1217](https://github.com/n24q02m/telegram/pull/1217),
+  [`a7e8894`](https://github.com/n24q02m/telegram/commit/a7e88943081b192b39768e73853cf3c12a88ac0f))
+
+### Features
+
+- Encrypt local StringSession storage and add schedule and draft actions
+  ([#1217](https://github.com/n24q02m/telegram/pull/1217),
+  [`a7e8894`](https://github.com/n24q02m/telegram/commit/a7e88943081b192b39768e73853cf3c12a88ac0f))
+
+
 ## v4.27.0-beta.1 (2026-11-24)
 
 ### Bug Fixes
