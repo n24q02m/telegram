@@ -235,7 +235,7 @@ class UserBackend(TelegramBackend):
             initial_session = store.load()
         else:
             await self._warn_on_api_identity_change()
-            s.data_dir.mkdir(parents=True, exist_ok=True)
+            s.data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
             initial_session = self._migrate_legacy_session(store)
 
         session = SaveOnChangeStringSession(initial_session, sink=store.save)

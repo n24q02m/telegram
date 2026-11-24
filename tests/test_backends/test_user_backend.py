@@ -1434,7 +1434,6 @@ class TestSignIn:
     ):
         from telegram.backends.user_backend import UserBackend
 
-        # Remove session file if it exists so we can test TOCTOU-safe creation
         session_file = tmp_path / "test_session.session"
         if session_file.exists():
             session_file.unlink()
@@ -1443,6 +1442,15 @@ class TestSignIn:
         backend = UserBackend(settings)
         await backend.connect()
 
+        # Encrypted StringSessionStore avoids creating plaintext .session SQLite files
+        assert not session_file.exists()
+        session = mock_client_class.call_args.args[0]
+        session.save()
+        encrypted_file = tmp_path / "profiles" / "test_session" / "session.json"
+        assert encrypted_file.exists()
+        assert encrypted_file.stat().st_mode & 0o777 == 0o600
+
+        await backend._prepare_session_file()
         assert session_file.exists()
         assert session_file.stat().st_mode & 0o777 == 0o600
 
