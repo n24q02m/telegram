@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -34,13 +35,65 @@ class UserBackend(TelegramBackend):
         self._namespace = namespace
 
     def _session_store(self):
-        from hull_core.storage import StringSessionStore
+        from hull_core.storage import LocalFsBackend, StringSessionStore
 
-        # Only used with an injected credential backend; session_name is the
-        # StringSession's hull sub (one blob per Telethon session).
-        return StringSessionStore(
-            "telegram", self._settings.session_name, backend=self._backend
+        if self._backend is not None:
+            # Injected credential backend: session_name is the StringSession's
+            # hull sub (one blob per Telethon session).
+            return StringSessionStore(
+                "telegram", self._settings.session_name, backend=self._backend
+            )
+        profile = (
+            None
+            if self._settings.session_name == "default"
+            else self._settings.session_name
         )
+        return StringSessionStore(
+            "telegram",
+            None,
+            backend=LocalFsBackend(base_dir=self._settings.data_dir),
+            profile=profile,
+        )
+
+    def _migrate_legacy_session(self, store: Any) -> str | None:
+        """One-time non-destructive migration from SQLite ``.session`` to encrypted StringSession."""
+        existing = store.load()
+        if existing:
+            return existing
+        legacy_path = (
+            self._settings.data_dir / self._settings.session_name
+        ).with_suffix(".session")
+        if not legacy_path.is_file():
+            return existing
+        from telethon.sessions import SQLiteSession, StringSession
+
+        sqlite_sess: SQLiteSession | None = None
+        try:
+            sqlite_sess = SQLiteSession(
+                str(self._settings.data_dir / self._settings.session_name)
+            )
+            if not getattr(sqlite_sess, "auth_key", None):
+                return existing
+            session_str = StringSession.save(sqlite_sess)
+            if not session_str:
+                return existing
+            store.save(session_str)
+            verified = store.load()
+            if verified != session_str:
+                logger.warning(
+                    "Encrypted StringSession verification mismatch during migration"
+                )
+                return existing
+            return verified
+        except Exception as exc:
+            logger.warning(f"Skipping legacy .session migration: {type(exc).__name__}")
+            return existing
+        finally:
+            if sqlite_sess is not None:
+                try:
+                    sqlite_sess.close()
+                except Exception:
+                    pass
 
     def _ensure_client(self) -> TelegramClient:
         if self._client is None:
@@ -175,24 +228,19 @@ class UserBackend(TelegramBackend):
     async def connect(self) -> None:
         s = self._settings
 
-        if self._is_externalized():
-            # Externalized (injected backend): the auth_key lives in the
-            # credential backend as a StringSession, so it does not depend on
-            # the local filesystem. The save-on-change sink flushes on
-            # every Telethon rewrite (DC migration / key rotation), not just after
-            # sign_in -- the fix for the "re-auth a few days later" failure mode.
-            from hull_core.storage import SaveOnChangeStringSession
+        from hull_core.storage import SaveOnChangeStringSession
 
-            store = self._session_store()
-            session = SaveOnChangeStringSession(store.load(), sink=store.save)
-            self._client = TelegramClient(session, s.api_id, s.api_hash)
+        store = self._session_store()
+        if self._is_externalized():
+            initial_session = store.load()
         else:
-            # Local default: durable on-disk ``.session`` SQLite.
             await self._warn_on_api_identity_change()
-            await self._prepare_session_file()
-            # Telethon auto-appends .session, so pass path without extension.
-            session_path = s.data_dir / s.session_name
-            self._client = TelegramClient(str(session_path), s.api_id, s.api_hash)
+            s.data_dir.mkdir(parents=True, exist_ok=True)
+            initial_session = self._migrate_legacy_session(store)
+
+        session = SaveOnChangeStringSession(initial_session, sink=store.save)
+        logger.debug("Connecting Telethon client with encrypted StringSession store")
+        self._client = TelegramClient(session, s.api_id, s.api_hash)
 
         await self._client.connect()
 
@@ -260,13 +308,18 @@ class UserBackend(TelegramBackend):
         }
 
     async def log_out(self) -> bool:
-        """Revoke the session with Telegram and delete the local ``.session``.
+        """Revoke the session with Telegram and clear stored session material.
 
-        Telethon's ``log_out`` invalidates the auth key server-side and removes
-        the on-disk session file. Used by the ``logout`` CLI subcommand.
+        Telethon's ``log_out`` invalidates the auth key server-side. Used by
+        the ``logout`` CLI subcommand.
         """
         client = self._ensure_client()
-        return await client.log_out()
+        revoked = await client.log_out()
+        try:
+            self._session_store().clear()
+        except Exception as exc:
+            logger.warning(f"Failed to clear StringSessionStore: {type(exc).__name__}")
+        return revoked
 
     # --- Messages ---
     async def send_message(
@@ -369,6 +422,168 @@ class UserBackend(TelegramBackend):
             self._serialize_message(m)
             async for m in client.iter_messages(chat_id, **kwargs)
         ]
+
+    @staticmethod
+    def _parse_schedule_at(schedule_at: str) -> datetime:
+        """Parse an ISO-8601 datetime or Unix epoch seconds string into UTC."""
+        raw = schedule_at.strip()
+        if not raw:
+            raise ValueError("schedule_at cannot be empty")
+        if raw.isdigit():
+            return datetime.fromtimestamp(int(raw), tz=UTC)
+        normalized = f"{raw[:-1]}+00:00" if raw.endswith("Z") else raw
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt
+
+    @staticmethod
+    def _parse_text_entities(
+        text: str, parse_mode: str | None
+    ) -> tuple[str, list[Any] | None]:
+        """Parse formatted draft text cleanly without private client hooks."""
+        if not parse_mode:
+            return text, None
+        mode = parse_mode.lower()
+        if mode == "html":
+            from telethon.extensions import html
+
+            return html.parse(text)
+        if mode in {"md", "markdown", "markdownv2"}:
+            from telethon.extensions import markdown
+
+            return markdown.parse(text)
+        raise ValueError(f"Unsupported parse_mode: {parse_mode}")
+
+    async def schedule_message(
+        self,
+        chat_id: str | int,
+        action: str = "send",
+        *,
+        text: str | None = None,
+        schedule_at: str | None = None,
+        message_id: int | None = None,
+        reply_to: int | None = None,
+        parse_mode: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        client = self._ensure_client()
+        if action == "send":
+            if not text or not schedule_at:
+                raise ValueError("schedule action 'send' requires text and schedule_at")
+            dt = self._parse_schedule_at(schedule_at)
+            msg = await client.send_message(
+                chat_id,
+                text,
+                reply_to=reply_to,
+                parse_mode=parse_mode,
+                schedule=dt,
+            )
+            data = self._serialize_message(msg)
+            data["scheduled"] = True
+            data["schedule_at"] = dt.isoformat()
+            return data
+        if action == "list":
+            from telethon.tl.functions.messages import GetScheduledHistoryRequest
+
+            peer = await client.get_input_entity(chat_id)
+            res = await client(GetScheduledHistoryRequest(peer=peer, hash=0))
+            raw_msgs = list(getattr(res, "messages", []) or [])[:limit]
+            items = [self._serialize_message(m) for m in raw_msgs]
+            return {"chat_id": chat_id, "messages": items, "count": len(items)}
+        if action == "delete":
+            if message_id is None:
+                raise ValueError("schedule action 'delete' requires message_id")
+            from telethon.tl.functions.messages import DeleteScheduledMessagesRequest
+
+            peer = await client.get_input_entity(chat_id)
+            await client(DeleteScheduledMessagesRequest(peer=peer, id=[message_id]))
+            return {"chat_id": chat_id, "deleted": True, "message_id": message_id}
+        raise ValueError(f"Unknown schedule action: {action!r}")
+
+    async def manage_draft(
+        self,
+        action: str = "get",
+        *,
+        chat_id: str | int | None = None,
+        text: str | None = None,
+        reply_to: int | None = None,
+        parse_mode: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        client = self._ensure_client()
+        normalized = {
+            "save": "save",
+            "set": "save",
+            "get": "get",
+            "list": "get",
+            "clear": "clear",
+            "delete": "clear",
+        }.get(action)
+        if normalized is None:
+            raise ValueError(f"Unknown draft action: {action!r}")
+
+        if normalized == "save":
+            if chat_id is None or text is None:
+                raise ValueError("draft action 'save' requires chat_id and text")
+            from telethon.tl.functions.messages import SaveDraftRequest
+            from telethon.tl.types import InputReplyToMessage
+
+            peer = await client.get_input_entity(chat_id)
+            raw_text, entities = self._parse_text_entities(text, parse_mode)
+            reply_obj = (
+                InputReplyToMessage(reply_to_msg_id=reply_to)
+                if reply_to is not None
+                else None
+            )
+            await client(
+                SaveDraftRequest(
+                    peer=peer,
+                    message=raw_text,
+                    reply_to=reply_obj,
+                    entities=entities,
+                )
+            )
+            return {"chat_id": chat_id, "saved": True, "text": text}
+
+        if normalized == "clear":
+            if chat_id is None:
+                raise ValueError("draft action 'clear' requires chat_id")
+            from telethon.tl.functions.messages import SaveDraftRequest
+
+            peer = await client.get_input_entity(chat_id)
+            await client(SaveDraftRequest(peer=peer, message=""))
+            return {"chat_id": chat_id, "cleared": True}
+
+        if chat_id is not None:
+            peer = await client.get_input_entity(chat_id)
+            draft_or_list = await client.get_drafts(peer)
+            drafts = (
+                list(draft_or_list)
+                if isinstance(draft_or_list, (list, tuple))
+                else ([draft_or_list] if draft_or_list is not None else [])
+            )
+        else:
+            drafts = list(await client.get_drafts())[:limit]
+
+        items: list[dict[str, Any]] = []
+        for d in drafts[:limit]:
+            d_text = getattr(d, "text", None)
+            if not d_text and getattr(d, "is_empty", False):
+                continue
+            item: dict[str, Any] = {
+                "text": d_text or "",
+                "date": str(d.date) if getattr(d, "date", None) else None,
+                "reply_to_msg_id": getattr(d, "reply_to_msg_id", None),
+            }
+            entity = getattr(d, "entity", None)
+            if entity is not None and getattr(entity, "id", None) is not None:
+                item["chat_id"] = entity.id
+            items.append(item)
+        result: dict[str, Any] = {"drafts": items, "count": len(items)}
+        if chat_id is not None:
+            result["chat_id"] = chat_id
+        return result
 
     # --- Chats ---
     async def list_chats(self, *, limit: int = 50) -> list[dict[str, Any]]:

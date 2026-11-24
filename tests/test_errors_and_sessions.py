@@ -293,3 +293,26 @@ class TestNeeds2faPassword:
     )
     def test_needs_2fa_password(self, error_msg: str, expected: bool):
         assert _needs_2fa_password(error_msg) is expected
+
+
+def test_check_saved_sessions_detects_encrypted_session_json(tmp_path):
+    """Returns True when encrypted session.json or profile session.json exists."""
+    from telegram.sessions import check_saved_sessions
+
+    data_dir = tmp_path / ".n24q02m" / "telegram"
+    data_dir.mkdir(parents=True)
+    with patch("pathlib.Path.home", return_value=tmp_path):
+        assert check_saved_sessions() is False
+        (data_dir / "session.json").write_text("{}", encoding="utf-8")
+        assert check_saved_sessions() is True
+
+
+def test_check_saved_sessions_detects_encrypted_profile_session_json(tmp_path):
+    """Returns True when profiles/<name>/session.json exists."""
+    from telegram.sessions import check_saved_sessions
+
+    profile_dir = tmp_path / ".n24q02m" / "telegram" / "profiles" / "account-work"
+    profile_dir.mkdir(parents=True)
+    with patch("pathlib.Path.home", return_value=tmp_path):
+        (profile_dir / "session.json").write_text("{}", encoding="utf-8")
+        assert check_saved_sessions() is True

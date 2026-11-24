@@ -343,9 +343,20 @@ def _handle_logout(args: argparse.Namespace) -> int:
     saved_cfg = _read_single_user_config(namespace, account=account)
     settings = _settings_for(namespace, saved_cfg)
     session_path = settings.session_path
+    from hull_core.storage import LocalFsBackend, StringSessionStore
+
+    profile = None if settings.session_name == "default" else settings.session_name
+    local_store = StringSessionStore(
+        PLUGIN_NAME,
+        None,
+        backend=LocalFsBackend(base_dir=settings.data_dir),
+        profile=profile,
+    )
+    has_encrypted_session = local_store.store.has_stored_blob()
     actions: list[str] = []
 
-    if session_path.exists():
+    cleared_session_blob = False
+    if session_path.exists() or has_encrypted_session:
         try:
             asyncio.run(_revoke_session(settings, namespace))
             actions.append("revoked Telegram session server-side")
@@ -357,16 +368,21 @@ def _handle_logout(args: argparse.Namespace) -> int:
                 f"{_sanitize_error(str(e))}",
                 file=sys.stderr,
             )
-        try:
-            session_path.unlink()
-            actions.append("deleted local session file")
-        except FileNotFoundError:
-            pass
+        if session_path.exists():
+            try:
+                session_path.unlink()
+                actions.append("deleted local session file")
+            except FileNotFoundError:
+                pass
+        if has_encrypted_session:
+            local_store.clear()
+            cleared_session_blob = True
+            actions.append("cleared stored session blob")
 
     if _clear_single_user_config(namespace, account=account):
         actions.append("cleared saved credentials")
     if account is None:
-        if _clear_blob(_SESSION_LEAF, namespace):
+        if _clear_blob(_SESSION_LEAF, namespace) and not cleared_session_blob:
             actions.append("cleared stored session blob")
         if _clear_blob(_MARKER_LEAF, namespace):
             actions.append("cleared api identity marker")
@@ -435,6 +451,8 @@ _MESSAGE_ACTIONS = (
     "react",
     "search",
     "history",
+    "schedule",
+    "draft",
 )
 _CHAT_ACTIONS = (
     "list",
@@ -480,9 +498,7 @@ def _add_tool_args(p: argparse.ArgumentParser) -> None:
 
 
 def _configure_message(p: argparse.ArgumentParser) -> None:
-    p.description = (
-        "MCP tool `message`: send, edit, delete, forward, pin, react, search, history."
-    )
+    p.description = "MCP tool `message`: send, edit, delete, forward, pin, react, search, history, schedule, draft."
     p.add_argument("action", choices=_MESSAGE_ACTIONS)
     p.add_argument(
         "--chat-id",
@@ -501,6 +517,21 @@ def _configure_message(p: argparse.ArgumentParser) -> None:
     p.add_argument("--query", default=None)
     p.add_argument("--limit", type=int, default=20)
     p.add_argument("--offset-id", type=int, default=None)
+    p.add_argument(
+        "--schedule-at",
+        default=None,
+        help="ISO-8601 timestamp or Unix epoch seconds for `schedule`",
+    )
+    p.add_argument(
+        "--schedule-action",
+        default=None,
+        help="Sub-action for `schedule`: send, list, or delete",
+    )
+    p.add_argument(
+        "--draft-action",
+        default=None,
+        help="Sub-action for `draft`: save, get, or clear",
+    )
     _add_tool_args(p)
 
 
@@ -689,6 +720,9 @@ def _handle_message(ns: argparse.Namespace) -> int:
             query=ns.query,
             limit=ns.limit,
             offset_id=ns.offset_id,
+            schedule_at=ns.schedule_at,
+            schedule_action=ns.schedule_action,
+            draft_action=ns.draft_action,
         )
 
     return _run_tool(ns, call)

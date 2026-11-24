@@ -245,7 +245,7 @@ client involved. `--json` prints the tool result as JSON; without it the result
 is `key: value` lines. A tool error goes to stderr and exits 1.
 
 ```bash
-# message: send, edit, delete, forward, pin, react, search, history
+# message: send, edit, delete, forward, pin, react, search, history, schedule, draft
 telegram message send --chat-id @mychannel --text "deploy is green"
 telegram message history --chat-id=-1001234567890 --limit 5 --json
 telegram message search --query "invoice" --json
@@ -283,7 +283,7 @@ see [Tool commands](#tool-commands)); both call the same handler.
 
 | Tool | Actions | Description |
 |:-----|:--------|:------------|
-| `message` | `send`, `edit`, `delete`, `forward`, `pin`, `react`, `search`, `history` | Send, edit, delete, forward messages. Pin, react, search, browse history |
+| `message` | `send`, `edit`, `delete`, `forward`, `pin`, `react`, `search`, `history`, `schedule`, `draft` | Send, schedule, edit, delete, forward messages. Drafts, pin, react, search, browse history |
 | `chat` | `list`, `info`, `create`, `join`, `leave`, `members`, `admin`, `settings`, `topics` | List and manage chats, groups, channels. Members, admin, forum topics |
 | `media` | `send_photo`, `send_file`, `send_voice`, `send_video`, `download` | Send photos, files, voice notes, videos. Download media from messages |
 | `contact` | `list`, `search`, `add`, `block` | List, search, add contacts. Block/unblock users (user mode only) |
@@ -320,7 +320,7 @@ How telegram stacks up against direct competitors in each pillar:
 
 - **SSRF Protection** -- All URLs validated against internal/private IP ranges, DNS rebinding blocked
 - **Path Traversal Prevention** -- File paths validated, sensitive directories blocked
-- **Session File Security** -- 600 permissions; the 2FA password is prompted, never stored in env vars
+- **Session File Security** -- Encrypted StringSession (AES-256-GCM via hull) with 0600 permissions; the 2FA password is prompted, never stored in env vars
 - **Error Sanitization** -- Credentials and bot tokens are never leaked in error messages or logs
 - **Prompt-injection boundaries** -- Telegram content returned by tools is wrapped in untrusted-content tags
 
@@ -341,7 +341,7 @@ infrastructure you control, and credentials never leave that machine.
 | Data | Location | Protection |
 |---|---|---|
 | Saved credentials (bot token / phone) | `~/.telegram/config.json`; `~/.telegram/subs/<ns>/config.json` in `multi` mode | AES-256-GCM with the machine key `~/.telegram/.secret` |
-| Telethon sessions | `~/.telegram/<name>.session`; `~/.telegram/subs/<ns>/` in `multi` mode | File permission 0600 |
+| Telethon sessions | `~/.telegram/session.json` (`profiles/<name>/session.json`); `~/.telegram/subs/<ns>/` in `multi` mode | AES-256-GCM StringSession via hull (`0600` files) |
 | HTTP bearer tokens | `token_hash` in `config.toml` / `users.toml` | Stored only as scrypt hashes |
 
 Anyone with access to your OS user account can read these files.

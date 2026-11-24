@@ -74,6 +74,8 @@ def _holds_server_state(directory: Path) -> bool:
     """True if ``directory`` contains files this server writes."""
     return (
         (directory / ".secret").exists()
+        or (directory / "session.json").exists()
+        or any(directory.glob("profiles/*/session.json"))
         or (directory / "user_sessions").exists()
         or any(directory.glob("*.session"))
     )

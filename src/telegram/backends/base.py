@@ -94,6 +94,30 @@ class TelegramBackend(ABC):
         limit: int = 20,
         offset_id: int | None = None,
     ) -> list[dict[str, Any]]: ...
+    @abstractmethod
+    async def schedule_message(
+        self,
+        chat_id: str | int,
+        action: str = "send",
+        *,
+        text: str | None = None,
+        schedule_at: str | None = None,
+        message_id: int | None = None,
+        reply_to: int | None = None,
+        parse_mode: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]: ...
+    @abstractmethod
+    async def manage_draft(
+        self,
+        action: str = "get",
+        *,
+        chat_id: str | int | None = None,
+        text: str | None = None,
+        reply_to: int | None = None,
+        parse_mode: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]: ...
 
     # --- Chats ---
     @abstractmethod

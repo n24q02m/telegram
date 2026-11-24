@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import UTC
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1638,10 +1639,22 @@ class TestUserBackendLogging:
         from telegram.backends.user_backend import UserBackend
 
         settings = _make_settings(tmp_path)
-        # Force OSError in os.open
+        backend = UserBackend(settings)
+        await backend.connect()
+
+        mock_logger.debug.assert_called()
+        debug_messages = [
+            call.args[0] for call in mock_logger.debug.call_args_list if call.args
+        ]
+        assert any("encrypted StringSession" in msg for msg in debug_messages)
+
+    async def test_prepare_session_file_logging(self, tmp_path, mock_logger):
+        from telegram.backends.user_backend import UserBackend
+
+        settings = _make_settings(tmp_path)
         with patch("os.open", side_effect=OSError("Permission denied")):
             backend = UserBackend(settings)
-            await backend.connect()
+            await backend._prepare_session_file()
 
         mock_logger.debug.assert_called()
         args, _ = mock_logger.debug.call_args
@@ -1843,3 +1856,135 @@ class TestLogOut:
 
         assert result is True
         mock_client.log_out.assert_awaited_once()
+
+
+class TestScheduleAndDraft:
+    async def test_schedule_send_iso_and_epoch(
+        self, tmp_path, mock_client, mock_client_class
+    ):
+        from datetime import datetime
+
+        from telegram.backends.user_backend import UserBackend
+
+        mock_client.send_message = AsyncMock(
+            return_value=_mock_message(msg_id=55, text="later")
+        )
+        backend = UserBackend(_make_settings(tmp_path))
+        await backend.connect()
+
+        res1 = await backend.schedule_message(
+            123,
+            "send",
+            text="later",
+            schedule_at="2026-12-01T09:00:00Z",
+            reply_to=10,
+            parse_mode="HTML",
+        )
+        assert res1["scheduled"] is True
+        assert res1["message_id"] == 55
+        _, kwargs = mock_client.send_message.call_args
+        assert kwargs["schedule"] == datetime(2026, 12, 1, 9, 0, tzinfo=UTC)
+        assert kwargs["reply_to"] == 10
+        assert kwargs["parse_mode"] == "HTML"
+
+        res2 = await backend.schedule_message(
+            123, "send", text="later", schedule_at="1800000000"
+        )
+        assert res2["scheduled"] is True
+
+    async def test_schedule_list_and_delete(
+        self, tmp_path, mock_client, mock_client_class
+    ):
+        from telegram.backends.user_backend import UserBackend
+
+        mock_client.get_input_entity = AsyncMock(return_value=123)
+        scheduled_resp = MagicMock()
+        scheduled_resp.messages = [_mock_message(msg_id=7, text="queued")]
+        mock_client.side_effect = [scheduled_resp, True]
+        backend = UserBackend(_make_settings(tmp_path))
+        await backend.connect()
+
+        listed = await backend.schedule_message(123, "list", limit=5)
+        assert listed["count"] == 1
+        assert listed["messages"][0]["message_id"] == 7
+
+        deleted = await backend.schedule_message(123, "delete", message_id=7)
+        assert deleted == {"chat_id": 123, "deleted": True, "message_id": 7}
+
+    async def test_schedule_validation_errors(
+        self, tmp_path, mock_client, mock_client_class
+    ):
+        from telegram.backends.user_backend import UserBackend
+
+        backend = UserBackend(_make_settings(tmp_path))
+        await backend.connect()
+
+        with pytest.raises(ValueError, match="requires text and schedule_at"):
+            await backend.schedule_message(123, "send")
+        with pytest.raises(ValueError, match="cannot be empty"):
+            await backend.schedule_message(123, "send", text="x", schedule_at="   ")
+        with pytest.raises(ValueError, match="requires message_id"):
+            await backend.schedule_message(123, "delete")
+        with pytest.raises(ValueError, match="Unknown schedule action"):
+            await backend.schedule_message(123, "bogus")
+
+    async def test_manage_draft_save_get_clear(
+        self, tmp_path, mock_client, mock_client_class
+    ):
+        from telegram.backends.user_backend import UserBackend
+
+        mock_client.get_input_entity = AsyncMock(return_value=123)
+        mock_client.return_value = True
+        draft_obj = MagicMock()
+        draft_obj.text = "wip note"
+        draft_obj.is_empty = False
+        draft_obj.date = "2026-11-24"
+        draft_obj.reply_to_msg_id = 4
+        draft_obj.entity = MagicMock(id=123)
+        empty_draft = MagicMock()
+        empty_draft.text = ""
+        empty_draft.is_empty = True
+        mock_client.get_drafts = AsyncMock(
+            side_effect=[draft_obj, [draft_obj, empty_draft]]
+        )
+
+        backend = UserBackend(_make_settings(tmp_path))
+        await backend.connect()
+
+        saved = await backend.manage_draft(
+            "save", chat_id=123, text="<b>wip</b>", reply_to=4, parse_mode="HTML"
+        )
+        assert saved == {"chat_id": 123, "saved": True, "text": "<b>wip</b>"}
+
+        saved_md = await backend.manage_draft(
+            "set", chat_id=123, text="**wip**", parse_mode="Markdown"
+        )
+        assert saved_md["saved"] is True
+
+        single = await backend.manage_draft("get", chat_id=123)
+        assert single["chat_id"] == 123
+        assert single["count"] == 1
+        assert single["drafts"][0]["text"] == "wip note"
+
+        all_drafts = await backend.manage_draft("list")
+        assert all_drafts["count"] == 1
+
+        cleared = await backend.manage_draft("clear", chat_id=123)
+        assert cleared == {"chat_id": 123, "cleared": True}
+
+    async def test_manage_draft_validation_errors(
+        self, tmp_path, mock_client, mock_client_class
+    ):
+        from telegram.backends.user_backend import UserBackend
+
+        backend = UserBackend(_make_settings(tmp_path))
+        await backend.connect()
+
+        with pytest.raises(ValueError, match="Unknown draft action"):
+            await backend.manage_draft("invalid")
+        with pytest.raises(ValueError, match="requires chat_id and text"):
+            await backend.manage_draft("save")
+        with pytest.raises(ValueError, match="requires chat_id"):
+            await backend.manage_draft("clear")
+        with pytest.raises(ValueError, match="Unsupported parse_mode"):
+            await backend.manage_draft("save", chat_id=123, text="hi", parse_mode="rst")
