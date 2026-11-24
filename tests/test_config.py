@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from telegram.config import Settings
@@ -116,7 +118,7 @@ def test_telegram_api_kill_switch_fails_loud_without_override(monkeypatch):
 def test_default_data_dir(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456:ABC")
     s = Settings()
-    assert s.data_dir.name == ".telegram"
+    assert s.data_dir == Path.home() / ".n24q02m" / "telegram"
 
 
 def test_custom_data_dir(monkeypatch, tmp_path):

@@ -22,6 +22,7 @@ from enum import Enum
 from typing import Any
 
 from hull_core.storage import (
+    NamedAccountRegistry,
     PerPluginStore,
     delete_legacy_config,
     read_legacy_config,
@@ -59,6 +60,22 @@ def plugin_store(leaf: str, namespace: str = DEFAULT_NAMESPACE) -> PerPluginStor
     return PerPluginStore(PLUGIN_NAME, sub_key=namespace_leaf(namespace, leaf))
 
 
+def account_registry(namespace: str = DEFAULT_NAMESPACE) -> NamedAccountRegistry:
+    """The NamedAccountRegistry for ``namespace``."""
+    reg = NamedAccountRegistry(PLUGIN_NAME)
+    reg._store = plugin_store("accounts", namespace)
+    return reg
+
+
+def resolve_account_name(account: str | None = None) -> str | None:
+    """Return explicit account alias or ``TELEGRAM_ACCOUNT`` override, else None."""
+    raw = account if account is not None else os.environ.get("TELEGRAM_ACCOUNT")
+    if raw is None:
+        return None
+    cleaned = raw.strip()
+    return cleaned or None
+
+
 def _migrate_legacy_config() -> dict[str, Any] | None:
     legacy = read_legacy_config(SERVER_NAME)
     if not legacy:
@@ -70,26 +87,88 @@ def _migrate_legacy_config() -> dict[str, Any] | None:
 
 
 def _write_single_user_config(
-    config: dict[str, Any], namespace: str = DEFAULT_NAMESPACE
+    config: dict[str, Any],
+    namespace: str = DEFAULT_NAMESPACE,
+    *,
+    account: str | None = None,
 ) -> None:
+    alias = resolve_account_name(account) or "default"
+    reg = account_registry(namespace)
+    reg.put_account(alias, config, set_active=True)
     plugin_store("config", namespace).save(config)
 
 
 def _read_single_user_config(
     namespace: str = DEFAULT_NAMESPACE,
+    *,
+    account: str | None = None,
 ) -> dict[str, Any] | None:
+    acct = resolve_account_name(account)
+    reg = account_registry(namespace)
+    if acct is not None:
+        return reg.get_account(acct)
+    active_cfg = reg.get_account()
+    if active_cfg is not None:
+        return active_cfg
     saved = plugin_store("config", namespace).load()
     if saved is not None or namespace != DEFAULT_NAMESPACE:
         return saved
     return _migrate_legacy_config()
 
 
-def _delete_single_user_config(namespace: str = DEFAULT_NAMESPACE) -> None:
-    plugin_store("config", namespace).clear()
-    if namespace == DEFAULT_NAMESPACE:
-        # A legacy entry that was never migrated would otherwise resurrect
-        # the credentials on the next read.
-        delete_legacy_config(SERVER_NAME)
+def _delete_single_user_config(
+    namespace: str = DEFAULT_NAMESPACE,
+    *,
+    account: str | None = None,
+) -> None:
+    acct = resolve_account_name(account)
+    reg = account_registry(namespace)
+    if acct is not None:
+        reg.remove_account(acct)
+    else:
+        for existing in reg.list_accounts():
+            reg.remove_account(existing)
+    next_active = reg.get_account()
+    if next_active is not None:
+        plugin_store("config", namespace).save(next_active)
+    else:
+        plugin_store("config", namespace).clear()
+        if namespace == DEFAULT_NAMESPACE:
+            # A legacy entry that was never migrated would otherwise resurrect
+            # the credentials on the next read.
+            delete_legacy_config(SERVER_NAME)
+
+
+def list_accounts(namespace: str = DEFAULT_NAMESPACE) -> tuple[list[str], str | None]:
+    """Return ``(account_aliases, active_alias)`` for ``namespace``."""
+    reg = account_registry(namespace)
+    return reg.list_accounts(), reg.active_account
+
+
+def use_account(alias: str, namespace: str = DEFAULT_NAMESPACE) -> dict[str, Any]:
+    """Switch the active named account and sync it to the primary config."""
+    reg = account_registry(namespace)
+    reg.set_active(alias)
+    cfg = reg.get_account(alias)
+    if cfg is None:  # pragma: no cover - guarded by set_active
+        msg = f"Account {alias!r} has no stored credentials"
+        raise KeyError(msg)
+    plugin_store("config", namespace).save(cfg)
+    return cfg
+
+
+def remove_account(alias: str, namespace: str = DEFAULT_NAMESPACE) -> bool:
+    """Remove a named account from ``namespace``."""
+    reg = account_registry(namespace)
+    removed = reg.remove_account(alias)
+    if not removed:
+        return False
+    next_active = reg.get_account()
+    if next_active is not None:
+        plugin_store("config", namespace).save(next_active)
+    else:
+        plugin_store("config", namespace).clear()
+    return True
 
 
 class CredentialState(Enum):

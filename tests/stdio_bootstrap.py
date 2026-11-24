@@ -30,6 +30,8 @@ _SCRUBBED_ENV = (
     "CREDENTIAL_SECRET",
     "MCP_TRANSPORT",
     "TRANSPORT_MODE",
+    "N24Q02M_HOME",
+    "N24Q02M_USE_XDG",
 )
 
 
@@ -45,7 +47,7 @@ def isolated_env(home: Path, **extra: str) -> dict[str, str]:
             "HOME": str(home),
             "USERPROFILE": str(home),
             "XDG_CONFIG_HOME": str(home / ".config"),
-            "TELEGRAM_DATA_DIR": str(home / ".telegram"),
+            "TELEGRAM_DATA_DIR": str(home / ".n24q02m" / "telegram"),
             "TELEGRAM_TEST_LEGACY_CONFIG": str(home / "legacy-mcp" / "config.enc"),
             "PYTHONIOENCODING": "utf-8",
         }

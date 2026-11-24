@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import os
+import shutil
 from pathlib import Path
 from typing import Literal
 
@@ -79,69 +80,28 @@ def _holds_server_state(directory: Path) -> bool:
 
 
 def resolve_default_data_dir() -> Path:
-    """Return the default data dir, moving the legacy one over once.
+    """Return the canonical data dir, migrating legacy directories once.
 
-    - ``~/.telegram`` exists and holds server state (or no legacy dir
-      exists): use it.
-    - Only ``~/.better-telegram-mcp`` exists: rename it to ``~/.telegram``,
-      read back that the move landed, and use the new path. If the rename
-      fails (for example a file is still open by an old process on Windows)
-      or the readback does not match, keep reading the legacy dir.
-    - Both exist but ``~/.telegram`` holds none of this server's files (an
-      unrelated directory): keep the legacy dir rather than strand its
-      sessions.
-
-    Whenever ``~/.telegram`` is the result, a pre-hull ``.secret`` in it is
-    moved aside (:func:`quarantine_foreign_machine_key`).
+    Canonical location is ``hull_core.storage.data_dir("telegram")``
+    (``~/.n24q02m/telegram/`` or profile / XDG / ``N24Q02M_HOME`` override).
+    When the target does not exist yet, non-destructively copies
+    ``~/.telegram/`` (or ``~/.better-telegram-mcp/``) into it without
+    removing the legacy folder. Whenever the canonical target is used, a
+    pre-hull ``.secret`` inside it is moved aside
+    (:func:`quarantine_foreign_machine_key`).
     """
-    home = Path.home()
-    target = home / DATA_DIR_NAME
-    legacy = home / LEGACY_DATA_DIR_NAME
+    from hull_core.storage import data_dir, migrate_legacy_data_dir
 
-    if not legacy.exists():
-        quarantine_foreign_machine_key()
-        return target
-    if target.exists():
-        if _holds_server_state(target):
-            logger.warning(
-                "Both {} and legacy {} exist; using {}. The legacy dir was left "
-                "untouched -- remove it once nothing reads it.",
-                target,
-                legacy,
-                target,
-            )
-            quarantine_foreign_machine_key()
-            return target
-        logger.warning(
-            "{} exists but holds no telegram server state; still reading legacy "
-            "{}. Set TELEGRAM_DATA_DIR to choose explicitly.",
-            target,
-            legacy,
-        )
-        return legacy
-
-    try:
-        os.rename(legacy, target)
-    except OSError as exc:
-        logger.warning(
-            "Could not move legacy data dir {} to {} ({}); reading the legacy "
-            "dir for now.",
-            legacy,
-            target,
-            exc,
-        )
-        return legacy
-
-    if target.is_dir() and not legacy.exists():
-        logger.info("Moved data dir {} -> {}", legacy, target)
-        quarantine_foreign_machine_key()
-        return target
-    logger.warning(
-        "Data dir move {} -> {} did not read back as expected; reading the legacy dir.",
-        legacy,
-        target,
-    )
-    return legacy if legacy.exists() else target
+    target = data_dir("telegram")
+    migrated = migrate_legacy_data_dir("telegram")
+    if not migrated and not target.exists():
+        legacy = Path.home() / LEGACY_DATA_DIR_NAME
+        if legacy.is_dir():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(legacy, target, dirs_exist_ok=True)
+            logger.info("Copied legacy data dir {} -> {}", legacy, target)
+    quarantine_foreign_machine_key()
+    return target
 
 
 # Telegram api_id/api_hash identity (BYO resolver chain: CLI (unused here) >
@@ -253,6 +213,8 @@ class Settings(BaseSettings):
             kwargs["api_id"] = int(config["TELEGRAM_API_ID"])
         if config.get("TELEGRAM_API_HASH"):
             kwargs["api_hash"] = config["TELEGRAM_API_HASH"]
+        if config.get("session_name"):
+            kwargs["session_name"] = config["session_name"]
         kwargs.update(overrides)
         return cls(**kwargs)
 

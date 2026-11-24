@@ -27,10 +27,12 @@ import argparse
 import asyncio
 import getpass
 import json
+import os
 import sys
 from collections.abc import Awaitable, Callable
 from typing import Any, TextIO
 
+from hull_core import validate_profile
 from hull_core.consumer_cli import build_cli
 from hull_core.storage import validate_sub
 
@@ -78,6 +80,21 @@ def _add_user_arg(p: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_account_arg(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--account",
+        default=None,
+        metavar="ALIAS",
+        help="named Telegram account alias (default: active account or TELEGRAM_ACCOUNT)",
+    )
+
+
+def _session_name_for_account(account: str | None) -> str:
+    if not account or account == "default":
+        return "default"
+    return f"account-{validate_sub(account)}"
+
+
 # --- auth / login ---
 
 
@@ -113,18 +130,20 @@ def _configure_auth(p: argparse.ArgumentParser) -> None:
     )
     _add_credential_args(p)
     _add_user_arg(p)
+    _add_account_arg(p)
 
 
 def _configure_login(p: argparse.ArgumentParser) -> None:
     p.description = "Deprecated alias of `auth`."
     _add_credential_args(p)
     _add_user_arg(p)
+    _add_account_arg(p)
 
 
 def _handle_auth(args: argparse.Namespace) -> int:
     if args.bot_token:
-        return _login_bot(args.bot_token, args.user)
-    return _login_phone(args.phone, args.user)
+        return _login_bot(args.bot_token, args.user, account=args.account)
+    return _login_phone(args.phone, args.user, account=args.account)
 
 
 def _handle_login(args: argparse.Namespace) -> int:
@@ -135,7 +154,12 @@ def _handle_login(args: argparse.Namespace) -> int:
     return _handle_auth(args)
 
 
-def _login_bot(bot_token: str, namespace: str = DEFAULT_NAMESPACE) -> int:
+def _login_bot(
+    bot_token: str,
+    namespace: str = DEFAULT_NAMESPACE,
+    *,
+    account: str | None = None,
+) -> int:
     try:
         asyncio.run(_verify_bot_token(bot_token))
     except Exception as e:
@@ -146,7 +170,9 @@ def _login_bot(bot_token: str, namespace: str = DEFAULT_NAMESPACE) -> int:
 
     from telegram.credential_state import _write_single_user_config
 
-    _write_single_user_config({"TELEGRAM_BOT_TOKEN": bot_token}, namespace)
+    _write_single_user_config(
+        {"TELEGRAM_BOT_TOKEN": bot_token}, namespace, account=account
+    )
     print(f"Logged in (bot mode, namespace {namespace}). Credentials saved locally.")
     return 0
 
@@ -161,7 +187,12 @@ async def _verify_bot_token(bot_token: str) -> None:
         await backend.disconnect()
 
 
-def _login_phone(phone: str, namespace: str = DEFAULT_NAMESPACE) -> int:
+def _login_phone(
+    phone: str,
+    namespace: str = DEFAULT_NAMESPACE,
+    *,
+    account: str | None = None,
+) -> int:
     if not sys.stdin.isatty():
         print(
             "auth --phone requires an interactive terminal "
@@ -171,7 +202,7 @@ def _login_phone(phone: str, namespace: str = DEFAULT_NAMESPACE) -> int:
         return 1
 
     try:
-        result = asyncio.run(_run_phone_login(phone, namespace))
+        result = asyncio.run(_run_phone_login(phone, namespace, account=account))
     except Exception as e:
         from telegram.errors import _sanitize_error
 
@@ -198,11 +229,19 @@ def _settings_for(namespace: str, config: dict[str, str] | None = None):
     )
 
 
-async def _run_phone_login(phone: str, namespace: str = DEFAULT_NAMESPACE) -> dict:
+async def _run_phone_login(
+    phone: str,
+    namespace: str = DEFAULT_NAMESPACE,
+    *,
+    account: str | None = None,
+) -> dict:
     from telegram.backends.user_backend import UserBackend
     from telegram.errors import _needs_2fa_password
 
-    settings = _settings_for(namespace, {"TELEGRAM_PHONE": phone})
+    session_name = _session_name_for_account(account)
+    settings = _settings_for(
+        namespace, {"TELEGRAM_PHONE": phone, "session_name": session_name}
+    )
     backend = UserBackend(settings, namespace=namespace)
     await backend.connect()
     try:
@@ -215,7 +254,7 @@ async def _run_phone_login(phone: str, namespace: str = DEFAULT_NAMESPACE) -> di
                 raise
             password = _prompt_2fa_password()
             result = await backend.sign_in(phone, code, password=password)
-        _persist_phone_identity(settings, phone, namespace)
+        _persist_phone_identity(settings, phone, namespace, account=account)
         return result
     finally:
         await backend.disconnect()
@@ -236,11 +275,25 @@ def _prompt_2fa_password() -> str:
 
 
 def _persist_phone_identity(
-    settings, phone: str, namespace: str = DEFAULT_NAMESPACE
+    settings,
+    phone: str,
+    namespace: str = DEFAULT_NAMESPACE,
+    *,
+    account: str | None = None,
 ) -> None:
     from telegram.credential_state import _write_single_user_config
 
-    _write_single_user_config({"TELEGRAM_PHONE": phone}, namespace)
+    session_name = getattr(settings, "session_name", None) or _session_name_for_account(
+        account
+    )
+    payload: dict[str, str] = {"TELEGRAM_PHONE": phone}
+    if account is not None:
+        payload["session_name"] = session_name
+    _write_single_user_config(
+        payload,
+        namespace,
+        account=account,
+    )
     _store(_MARKER_LEAF, namespace).save({"api_id": str(settings.api_id)})
 
 
@@ -254,6 +307,7 @@ def _configure_logout(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--yes", action="store_true", default=False)
     _add_user_arg(p)
+    _add_account_arg(p)
 
 
 def _confirmed(namespace: str, *, yes: bool) -> bool:
@@ -280,10 +334,14 @@ def _confirmed(namespace: str, *, yes: bool) -> bool:
 
 def _handle_logout(args: argparse.Namespace) -> int:
     namespace: str = args.user
+    account: str | None = getattr(args, "account", None)
     if not _confirmed(namespace, yes=args.yes):
         return 1
 
-    settings = _settings_for(namespace)
+    from telegram.credential_state import _read_single_user_config
+
+    saved_cfg = _read_single_user_config(namespace, account=account)
+    settings = _settings_for(namespace, saved_cfg)
     session_path = settings.session_path
     actions: list[str] = []
 
@@ -305,12 +363,13 @@ def _handle_logout(args: argparse.Namespace) -> int:
         except FileNotFoundError:
             pass
 
-    if _clear_single_user_config(namespace):
+    if _clear_single_user_config(namespace, account=account):
         actions.append("cleared saved credentials")
-    if _clear_blob(_SESSION_LEAF, namespace):
-        actions.append("cleared stored session blob")
-    if _clear_blob(_MARKER_LEAF, namespace):
-        actions.append("cleared api identity marker")
+    if account is None:
+        if _clear_blob(_SESSION_LEAF, namespace):
+            actions.append("cleared stored session blob")
+        if _clear_blob(_MARKER_LEAF, namespace):
+            actions.append("cleared api identity marker")
 
     if not actions:
         print("Nothing to log out.")
@@ -333,14 +392,16 @@ async def _revoke_session(settings, namespace: str = DEFAULT_NAMESPACE) -> None:
         await backend.disconnect()
 
 
-def _clear_single_user_config(namespace: str = DEFAULT_NAMESPACE) -> bool:
+def _clear_single_user_config(
+    namespace: str = DEFAULT_NAMESPACE, *, account: str | None = None
+) -> bool:
     from telegram.credential_state import (
         _delete_single_user_config,
         _read_single_user_config,
     )
 
-    existed = bool(_read_single_user_config(namespace))
-    _delete_single_user_config(namespace)
+    existed = bool(_read_single_user_config(namespace, account=account))
+    _delete_single_user_config(namespace, account=account)
     return existed
 
 
@@ -406,7 +467,7 @@ def _chat_id(value: str) -> str | int:
 
 
 def _add_tool_args(p: argparse.ArgumentParser) -> None:
-    """Flags every tool command shares: ``--json`` and the namespace."""
+    """Flags every tool command shares: ``--json``, namespace, and account."""
     p.add_argument(
         "--json",
         dest="as_json",
@@ -415,6 +476,7 @@ def _add_tool_args(p: argparse.ArgumentParser) -> None:
         help="print the tool result as JSON on stdout",
     )
     _add_user_arg(p)
+    _add_account_arg(p)
 
 
 def _configure_message(p: argparse.ArgumentParser) -> None:
@@ -572,12 +634,20 @@ def _emit(payload: dict[str, Any], *, as_json: bool) -> int:
 
 
 async def _one_shot(
-    namespace: str, call: Callable[[Any], Awaitable[dict[str, Any]]]
+    namespace: str,
+    call: Callable[[Any], Awaitable[dict[str, Any]]],
+    *,
+    account: str | None = None,
 ) -> dict[str, Any]:
     """Run ``call`` against a backend that lives for exactly this call."""
     from telegram.tool_session import connected_backend
 
-    async with connected_backend(namespace) as backend:
+    cm = (
+        connected_backend(namespace)
+        if account is None
+        else connected_backend(namespace, account=account)
+    )
+    async with cm as backend:
         return await call(backend)
 
 
@@ -589,7 +659,9 @@ def _run_tool(
     from telegram.tool_session import ToolSessionError
 
     try:
-        payload = asyncio.run(_one_shot(ns.user, call))
+        payload = asyncio.run(
+            _one_shot(ns.user, call, account=getattr(ns, "account", None))
+        )
     except ToolSessionError as e:
         print(f"telegram: {e}", file=sys.stderr)
         return 1
@@ -741,6 +813,7 @@ _OPERATOR_COMMANDS = (
     ("auth", "authorize this machine: --bot-token <token> | --phone <+number>"),
     ("login", "deprecated alias of auth"),
     ("logout", "revoke the Telegram session and delete saved credentials"),
+    ("accounts", "operator: list, switch, or remove named accounts"),
     ("config", "operator: show or delete the saved credential config"),
     ("status", "operator: show whether credentials are configured"),
     ("doctor", "operator: print environment diagnostics"),
@@ -779,12 +852,64 @@ def _usage() -> str:
 # --- entry ---
 
 
+def _configure_accounts(p: argparse.ArgumentParser) -> None:
+    p.description = "Manage named Telegram accounts for the selected namespace."
+    sub = p.add_subparsers(dest="accounts_action", required=True)
+
+    p_list = sub.add_parser("list", help="list configured account aliases")
+    p_list.add_argument("--json", dest="as_json", action="store_true", default=False)
+    _add_user_arg(p_list)
+
+    p_use = sub.add_parser("use", help="switch the active account alias")
+    p_use.add_argument("alias", help="account alias to activate")
+    _add_user_arg(p_use)
+
+    p_remove = sub.add_parser("remove", help="remove a named account")
+    p_remove.add_argument("alias", help="account alias to remove")
+    _add_user_arg(p_remove)
+
+
+def _handle_accounts(args: argparse.Namespace) -> int:
+    from telegram.credential_state import list_accounts, remove_account, use_account
+
+    action = args.accounts_action
+    namespace = args.user
+    if action == "list":
+        aliases, active = list_accounts(namespace)
+        if args.as_json:
+            print(json.dumps({"active": active, "accounts": aliases}, indent=2))
+            return 0
+        if not aliases:
+            print("No saved accounts.")
+            return 0
+        for alias in aliases:
+            marker = "*" if alias == active else " "
+            print(f"{marker} {alias}")
+        return 0
+    if action == "use":
+        try:
+            use_account(args.alias, namespace)
+        except KeyError as exc:
+            print(f"telegram: {exc}", file=sys.stderr)
+            return 1
+        print(f"Active account set to {args.alias!r} (namespace {namespace}).")
+        return 0
+    if action == "remove":
+        if not remove_account(args.alias, namespace):
+            print(f"telegram: unknown account {args.alias!r}", file=sys.stderr)
+            return 1
+        print(f"Removed account {args.alias!r} (namespace {namespace}).")
+        return 0
+    return 2  # pragma: no cover
+
+
 def _extras() -> dict:
     return {
         "auth": (_configure_auth, _handle_auth),
         # `login` is a deprecated alias of `auth`, kept one release cycle.
         "login": (_configure_login, _handle_login),
         "logout": (_configure_logout, _handle_logout),
+        "accounts": (_configure_accounts, _handle_accounts),
         # MCP tools, in the README's tool-table order.
         "message": (_configure_message, _handle_message),
         "chat": (_configure_chat, _handle_chat),
@@ -826,29 +951,69 @@ def _migrate_legacy_for_builtins(argv: list[str]) -> None:
         )
 
 
+def _extract_profile_arg(argv: list[str]) -> tuple[str | None, list[str]]:
+    """Strip ``--profile <name>`` / ``--profile=<name>`` from ``argv``."""
+    profile: str | None = None
+    rest: list[str] = []
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok == "--profile":
+            if i + 1 >= len(argv):
+                raise ValueError("--profile requires a value")
+            profile = argv[i + 1]
+            i += 2
+        elif tok.startswith("--profile="):
+            profile = tok.split("=", 1)[1]
+            i += 1
+        else:
+            rest.append(tok)
+            i += 1
+    if profile is not None:
+        profile = validate_profile(profile)
+    return profile, rest
+
+
 def main(argv: list[str] | None = None) -> int:
     from telegram.config import quarantine_foreign_machine_key
 
-    args = sys.argv[1:] if argv is None else argv
-    # hull's built-ins (status/config/doctor) open the store directly; move a
-    # pre-hull .secret aside first so they do not fail on it.
-    quarantine_foreign_machine_key()
-    if args in (["-h"], ["--help"]):
-        # Operator commands and tool groups are listed separately; hull's own
-        # usage prints one flat subcommand list.
-        print(_usage())
-        return 0
-    _migrate_legacy_for_builtins(args)
-    return build_cli(
-        # The console-script name operators type, matching README and
-        # pyproject.toml. The legacy `better-telegram-mcp` script is an alias of
-        # this same entry point, so it reports the documented name too.
-        DISPLAY_NAME,
-        # Credential slug is "telegram", not the display name minus "-mcp", so
-        # `config`/`status`/`doctor` read the same store the server writes to
-        # (credential_state.PLUGIN_NAME) rather than deriving it from the name.
-        plugin_name=PLUGIN_NAME,
-        serve=_serve,
-        extra=_extras(),
-        version=_version(),
-    )(argv)
+    raw_args = sys.argv[1:] if argv is None else list(argv)
+    try:
+        profile, args = _extract_profile_arg(raw_args)
+    except ValueError as exc:
+        print(f"telegram: {exc}", file=sys.stderr)
+        return 2
+
+    prev_profile = os.environ.get("TELEGRAM_PROFILE")
+    if profile is not None:
+        os.environ["TELEGRAM_PROFILE"] = profile
+
+    try:
+        # hull's built-ins (status/config/doctor) open the store directly; move a
+        # pre-hull .secret aside first so they do not fail on it.
+        quarantine_foreign_machine_key()
+        if args in (["-h"], ["--help"]):
+            # Operator commands and tool groups are listed separately; hull's own
+            # usage prints one flat subcommand list.
+            print(_usage())
+            return 0
+        _migrate_legacy_for_builtins(args)
+        return build_cli(
+            # The console-script name operators type, matching README and
+            # pyproject.toml. The legacy `better-telegram-mcp` script is an alias of
+            # this same entry point, so it reports the documented name too.
+            DISPLAY_NAME,
+            # Credential slug is "telegram", not the display name minus "-mcp", so
+            # `config`/`status`/`doctor` read the same store the server writes to
+            # (credential_state.PLUGIN_NAME) rather than deriving it from the name.
+            plugin_name=PLUGIN_NAME,
+            serve=_serve,
+            extra=_extras(),
+            version=_version(),
+        )(args)
+    finally:
+        if profile is not None:
+            if prev_profile is None:
+                os.environ.pop("TELEGRAM_PROFILE", None)
+            else:
+                os.environ["TELEGRAM_PROFILE"] = prev_profile

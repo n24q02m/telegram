@@ -4,7 +4,7 @@ version = "4.26.1"
 description = "Production-grade MCP server for Telegram — dual-mode Bot API + MTProto, domain-separated tools"
 readme = "README.md"
 license = { text = "Apache-2.0" }
-requires-python = "==3.13.*"
+requires-python = ">=3.11.5,<3.16"
 authors = [{ name = "n24q02m", email = "quangminh2422004@gmail.com" }]
 keywords = [
     "mcp", "mcp-server", "model-context-protocol",
@@ -18,14 +18,18 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: Communications :: Chat",
 ]
 dependencies = [
     # Standalone FastMCP: hull's HTTP transport mounts `FastMCP.http_app()`.
     # Range matches hull's own pin.
     "fastmcp>=4.2.0,<5",
-    "n24q02m-hull>=0.8.0,<0.9",
+    "n24q02m-hull>=0.11.0b1,<0.12",
     "httpx>=0.28.1",
     "telethon>=1.45.0",
     "pydantic>=2.14.3,<2.15",
@@ -97,7 +101,7 @@ addopts = "-m 'not integration and not live and not full and not e2e'"
 # toolkit's own style. Linting or formatting them here (CI or the pre-commit
 # hooks, which pass --force-exclude) would leave a copy apply reports as drifted.
 extend-exclude = ["scripts/repo-bootstrap", "scripts/main_integrity.py", "scripts/merge_gate.py"]
-target-version = "py313"
+target-version = "py311"
 line-length = 88
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4"]
@@ -105,7 +109,7 @@ ignore = ["E501"]
 [tool.ruff.format]
 quote-style = "double"
 [tool.ty.environment]
-python-version = "3.13"
+python-version = "3.11"
 [tool.ty.rules]
 import-not-found = "ignore"
 possibly-unresolved-reference = "ignore"
