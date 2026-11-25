@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v4.27.0 (2026-11-25)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance ([#1219](https://github.com/n24q02m/telegram/pull/1219),
+  [`6df6424`](https://github.com/n24q02m/telegram/commit/6df642452e625059b69c7d55bd766f119b330488))
+
+- **deps**: Update patch dependencies ([#1218](https://github.com/n24q02m/telegram/pull/1218),
+  [`88e199e`](https://github.com/n24q02m/telegram/commit/88e199ee9082f5364d913336de5f617554ecd102))
+
+
 ## v4.27.0-beta.2 (2026-11-24)
 
 ### Bug Fixes
