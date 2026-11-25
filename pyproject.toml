@@ -28,7 +28,7 @@ classifiers = [
 dependencies = [
     # Standalone FastMCP: hull's HTTP transport mounts `FastMCP.http_app()`.
     # Range matches hull's own pin.
-    "fastmcp>=4.2.0,<5",
+    "fastmcp>=4.2.1,<5",
     "n24q02m-hull>=0.11.0b1,<0.12",
     "httpx>=0.28.1",
     "telethon>=1.45.0",
@@ -49,7 +49,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
     "ruff>=0.17.5",
-    "ty>=0.0.104",
+    "ty>=0.0.105",
     "pre-commit>=4.7.0",
 ]
 [project.scripts]
