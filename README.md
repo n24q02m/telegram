@@ -31,7 +31,6 @@ mcp-name: io.github.n24q02m/telegram
 | [email](https://github.com/n24q02m/email)                                     | IMAP/SMTP email for AI agents -- read, send, organize folders, and manage att... | MCP         |
 | [fastretrieval](https://github.com/n24q02m/fastretrieval)                     | Fast multi-model retrieval runtime: ONNX and GGUF embeddings, reranking, and ... | Tooling     |
 | [hull](https://github.com/n24q02m/hull)                                       | hull is the shared monorepo core for the wet, crg and mnemo self-hosted stack    | MCP         |
-| [jules-task-archiver](https://github.com/n24q02m/jules-task-archiver)         | Chrome Extension for bulk operations on Jules tasks via batchexecute API -- a... | Tooling     |
 | [mnemo](https://github.com/n24q02m/mnemo)                                     | Persistent AI memory with hybrid search. Open, free, unlimited.                  | MCP         |
 | [notion](https://github.com/n24q02m/notion)                                   | Markdown-first Notion for AI agents -- pages, databases, blocks, and comments... | MCP         |
 | [skret](https://github.com/n24q02m/skret)                                     | Secrets without the server.                                                      | CLI         |
@@ -85,7 +84,7 @@ mcp-name: io.github.n24q02m/telegram
 /plugin install telegram@n24q02m-plugins
 
 # Direct uvx invocation (stdio, bot mode)
-claude mcp add telegram -e TELEGRAM_BOT_TOKEN=123456:ABC-DEF -- uvx --python 3.13 n24q02m-telegram@latest
+claude mcp add telegram -e TELEGRAM_BOT_TOKEN=123456:ABC-DEF -- uvx --python 3.14 n24q02m-telegram@latest
 
 # Docker: the image runs the HTTP server and needs a config.toml with
 # auth = "token" or "multi" (see HTTP mode)
@@ -140,7 +139,7 @@ stdio server prints these instructions to stderr and exits with status 1.
 
 Also listed on [Smithery](https://smithery.ai/servers/n24q02m/better-telegram-mcp).
 Per [`smithery.yaml`](smithery.yaml), Smithery starts the server over **stdio** with
-`uvx --python 3.13 n24q02m-telegram@latest` and takes **no install-time configuration**
+`uvx --python 3.14 n24q02m-telegram@latest` and takes **no install-time configuration**
 (empty `configSchema`). Credentials come from the `TELEGRAM_BOT_TOKEN` env var or
 a prior `telegram auth` (see [Setup](#setup)).
 
