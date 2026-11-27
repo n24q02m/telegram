@@ -29,7 +29,7 @@ dependencies = [
     # Standalone FastMCP: hull's HTTP transport mounts `FastMCP.http_app()`.
     # Range matches hull's own pin.
     "fastmcp>=4.2.2,<5",
-    "n24q02m-hull>=0.11.0,<0.12",
+    "n24q02m-hull>=0.12.0b1,<0.13",
     "httpx>=0.28.1",
     "telethon>=1.46.0",
     "pydantic>=2.14.3,<2.15",
@@ -80,6 +80,8 @@ exclude-newer-package = { n24q02m-hull = false }
 packages = ["src/telegram"]
 [tool.hatch.build.targets.wheel.sources]
 "src" = ""
+[tool.hatch.build.targets.wheel.force-include]
+"skills" = "telegram/skills"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

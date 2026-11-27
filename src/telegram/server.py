@@ -15,6 +15,11 @@ from telegram import __version__
 
 from .backends.base import TelegramBackend
 from .config import Settings
+from .extensions import (
+    attach_bundled_skills,
+    confirm_sensitive_action,
+    enrich_media_download_result,
+)
 from .security import build_external_tool_result
 from .tool_session import load_settings
 from .tools.dispatch import (
@@ -232,6 +237,21 @@ def _wrap_tool(tool_name: str):
     return decorator
 
 
+def _cancelled_action(
+    action: str,
+    reason: str | None,
+    **details: Any,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "cancelled": True,
+        "confirmed": False,
+        "action": action,
+        "reason": reason or "cancelled",
+    }
+    payload.update(details)
+    return ok(payload)
+
+
 # --- Tools ---
 
 
@@ -279,6 +299,20 @@ async def message(
     backend = await _ready_backend()
     if backend is None:
         return _not_ready_response()
+
+    if action == "delete" and chat_id is not None and message_id is not None:
+        confirmed, outcome = await confirm_sensitive_action(
+            f"Delete message {message_id} from chat {chat_id}?",
+            title="Confirm message deletion",
+            description="Permanently deletes the selected Telegram message.",
+        )
+        if not confirmed:
+            return _cancelled_action(
+                "delete",
+                outcome.reason or outcome.status,
+                chat_id=chat_id,
+                message_id=message_id,
+            )
 
     return await run_message(
         backend,
@@ -341,6 +375,34 @@ async def chat(
     if backend is None:
         return _not_ready_response()
 
+    if action == "leave" and chat_id is not None:
+        confirmed, outcome = await confirm_sensitive_action(
+            f"Leave chat {chat_id}?",
+            title="Confirm leaving chat",
+            description="Leaves the selected Telegram group or channel.",
+        )
+        if not confirmed:
+            return _cancelled_action(
+                "leave",
+                outcome.reason or outcome.status,
+                chat_id=chat_id,
+            )
+    elif action == "admin" and chat_id is not None and user_id is not None:
+        verb = "Demote" if demote else "Promote"
+        confirmed, outcome = await confirm_sensitive_action(
+            f"{verb} user {user_id} in chat {chat_id}?",
+            title="Confirm admin permission change",
+            description="Modifies administrator privileges in the Telegram chat.",
+        )
+        if not confirmed:
+            return _cancelled_action(
+                "admin",
+                outcome.reason or outcome.status,
+                chat_id=chat_id,
+                user_id=user_id,
+                demote=demote,
+            )
+
     return await run_chat(
         backend,
         action=action,
@@ -390,7 +452,7 @@ async def media(
     if backend is None:
         return _not_ready_response()
 
-    return await run_media(
+    result = await run_media(
         backend,
         action=action,
         chat_id=chat_id,
@@ -400,6 +462,11 @@ async def media(
         output_dir=output_dir,
         file_id=file_id,
     )
+    if action == "download" and not result.get("error"):
+        return enrich_media_download_result(
+            result, chat_id=chat_id, message_id=message_id
+        )
+    return result
 
 
 @mcp.tool(
@@ -432,6 +499,19 @@ async def contact(
     backend = await _ready_backend()
     if backend is None:
         return _not_ready_response()
+
+    if action == "block" and not unblock and user_id is not None:
+        confirmed, outcome = await confirm_sensitive_action(
+            f"Block user {user_id}?",
+            title="Confirm blocking contact",
+            description="Blocks this Telegram user from sending you messages.",
+        )
+        if not confirmed:
+            return _cancelled_action(
+                "block",
+                outcome.reason or outcome.status,
+                user_id=user_id,
+            )
 
     return await run_contact(
         backend,
@@ -531,10 +611,11 @@ async def help(topic: str | None = None) -> str:
     return await run_help(topic)
 
 
-# --- Resources ---
+# --- Resources & Skills ---
 from .resources import register_resources  # noqa: E402
 
 register_resources(mcp)
+attach_bundled_skills(mcp)
 
 
 _UNCONFIGURED_STDIO_HINT = (
