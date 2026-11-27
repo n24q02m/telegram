@@ -66,10 +66,16 @@ async def test_connect_populates_bot_info():
 
 
 async def test_connect_bot_username():
-    """The connected bot has the expected username."""
+    """The connected bot reports a Telegram bot username.
+
+    The token decides which bot is under test, so the test checks the Bot API
+    invariant (bot usernames end in "bot") instead of pinning one bot name.
+    """
     backend = BotBackend(BOT_TOKEN)
     await backend.connect()
-    assert backend._bot_info.get("username") == "n24q02m_vps_hermes_bot"
+    username = backend._bot_info.get("username")
+    assert isinstance(username, str)
+    assert username.lower().endswith("bot")
     await backend.disconnect()
 
 
