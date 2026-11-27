@@ -2,6 +2,27 @@
 
 <!-- version list -->
 
+## v4.28.0-beta.1 (2026-11-27)
+
+### Bug Fixes
+
+- Remove beta classifier and sync Wave 0 docs metadata
+  ([#1222](https://github.com/n24q02m/telegram/pull/1222),
+  [`6a282e8`](https://github.com/n24q02m/telegram/commit/6a282e8fbcd78140484828e659286002dc371acb))
+
+- **deps**: Lock file maintenance ([#1221](https://github.com/n24q02m/telegram/pull/1221),
+  [`8fd8995`](https://github.com/n24q02m/telegram/commit/8fd899587b222c94e4c4fe11fefebc2da51bbbd6))
+
+- **deps**: Update patch dependencies ([#1220](https://github.com/n24q02m/telegram/pull/1220),
+  [`3f703dc`](https://github.com/n24q02m/telegram/commit/3f703dcb1f3732b0549120b7d68033e6bf937d09))
+
+### Features
+
+- Upgrade to MCP 2026-07-28 skills, elicitation, and files
+  ([#1223](https://github.com/n24q02m/telegram/pull/1223),
+  [`835d1d4`](https://github.com/n24q02m/telegram/commit/835d1d444922a0bd5ef331b7809245766c8eab71))
+
+
 ## v4.27.0 (2026-11-25)
 
 ### Bug Fixes
