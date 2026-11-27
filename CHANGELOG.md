@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v4.28.0 (2026-11-27)
+
+### Bug Fixes
+
+- Unpin hull beta floor for stable release ([#1224](https://github.com/n24q02m/telegram/pull/1224),
+  [`9ab7f1f`](https://github.com/n24q02m/telegram/commit/9ab7f1f927ff3034e398ed73f74ad8f3d0fda76e))
+
+
 ## v4.28.0-beta.1 (2026-11-27)
 
 ### Bug Fixes
